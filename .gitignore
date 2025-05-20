@@ -1,0 +1,35 @@
+# Escludi file di configurazione e chiavi segrete
+.env
+*.env
+
+# Escludi database locali (sqlite)
+*.db
+
+# Escludi log
+logs/
+*.log
+
+# Escludi le cartelle delle dipendenze di Python
+venv/
+.local/
+__pycache__/
+*.pyc
+*.pyo
+
+# Escludi file temporanei di editor
+*.swp
+*.swo
+
+# Escludi file e cartelle di test pesanti o output
+output/
+tmp/
+.cache/
+
+# Escludi file di grandi dimensioni non necessari
+*.zip
+*.rar
+*.tar
+*.gz
+
+# Escludi tutto quello che non vuoi MAI caricare su github
+venv/

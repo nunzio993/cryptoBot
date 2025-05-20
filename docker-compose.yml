@@ -1,0 +1,58 @@
+version: "3.8"
+
+services:
+
+  db:
+    image: postgres:15
+    container_name: binance-db
+    restart: always
+    env_file:
+      - .env
+    environment:
+      POSTGRES_USER: ${PG_USER}
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+      POSTGRES_DB: ${PG_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db-init:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+
+  core:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: binancebot-mainnet-core
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      - ./:/app
+      - ./logs:/app/logs
+      - ./trades.db:/app/trades.db
+
+  dashboard:
+    depends_on:
+      - db
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: binancebot-mainnet-dashboard
+    restart: always
+    command: >
+        streamlit run app.py
+        --server.port 8501
+        --server.address 0.0.0.0
+        --server.runOnSave=false
+    ports:
+      - "8502:8501"
+    env_file:
+      - .env
+    environment:
+      - STREAMLIT_DEPRECATION_SHOWEXPERIMENTALGETQUERYPARAMSWARNING=false
+      - DATABASE_URL=postgresql://${PG_USER}:${PG_PASSWORD}@db:5432/${PG_DB}
+    volumes:
+      - ./:/app
+      - ./.streamlit:/root/.streamlit
+volumes:
+  pgdata:
