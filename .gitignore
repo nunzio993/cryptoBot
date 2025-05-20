@@ -33,3 +33,6 @@ tmp/
 
 # Escludi tutto quello che non vuoi MAI caricare su github
 venv/
+
+.streamlit/secrets.toml
+.streamlit/machine_id_v4
