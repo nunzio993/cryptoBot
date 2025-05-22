@@ -3,11 +3,12 @@ import pandas as pd
 import datetime
 from pathlib import Path
 from sqlalchemy import Boolean
-
+from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy import create_engine
 from binance.client import Client
 from src.core_and_scheduler import fetch_last_closed_candle
 from symbols import SYMBOLS
-from models import Order
+from models import Order, User, SessionLocal
 from src.adapters import BinanceAdapter, BybitAdapter
 from models import APIKey, Exchange
 
@@ -21,6 +22,7 @@ INTERVAL_MAP = {
 
 APP_NAME = "Crypto MultiBot"  # scegli il nme che preferisci
 MAIN_ASSET = "USDC"
+
 
 
 def show_dashboard_tab(tab, user, adapters, session):
@@ -79,12 +81,20 @@ def show_dashboard_tab(tab, user, adapters, session):
 
         # --- Form Nuovo Trade in sidebar ---
         st.sidebar.markdown("### Saldo")
+        pending  = session.query(Order).filter_by(user_id=user.id, status="PENDING").all()
+
         try:
             adapter = adapters[selected_exchange]
             balance = adapter.get_balance(MAIN_ASSET)
             st.sidebar.write(f"**{MAIN_ASSET}: {balance:,.2f}**")
+
+            usdc_bloccati = sum(float(o.max_entry) for o in pending if o.max_entry is not None)
+            usdc_disponibili = balance - usdc_bloccati
+            st.sidebar.write(f"USDC disponibili: {usdc_disponibili:,.2f}")
         except Exception as e:
             st.sidebar.warning("Saldo non disponibile")
+
+
 
         st.sidebar.subheader("Nuovo Trade")
         with st.sidebar.form("trade_form", clear_on_submit=True):
