@@ -116,12 +116,13 @@ if username is None:
                 st.error("Email non valida.")
             elif session.query(User).filter_by(username=new_user).first():
                 st.error("Username già esistente.")
+            elif session.query(User).filter_by(email=new_email).first():
+                st.error("Questa email è già registrata.")
             else:
                 pwd_hash = generate_password_hash(new_pwd)
                 session.add(User(username=new_user, email=new_email, password_hash=pwd_hash))
                 session.commit()
                 set_login_cookie(new_user)
-
     # Impedisce di raggiungere la dashboard finché non ci sono credenziali
     st.stop()
 

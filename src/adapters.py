@@ -2,6 +2,8 @@ from models import SessionLocal
 from models import Order, SessionLocal
 from binance.exceptions import BinanceAPIException
 from binance.client import Client as BinanceClient
+from binance.client import Client
+
 import ccxt
 
 class ExchangeAdapter:
@@ -15,8 +17,8 @@ class ExchangeAdapter:
         raise NotImplementedError
 
 class BinanceAdapter(ExchangeAdapter):
-    def __init__(self, api_key: str, secret_key: str, testnet: bool = True):
-        self.client = BinanceClient(api_key, secret_key, testnet=testnet)
+    def __init__(self, api_key, api_secret, testnet=True):
+        self.client = Client(api_key, api_secret, testnet=testnet)
 
     def get_balance(self, asset: str) -> float:
         bal = self.client.get_asset_balance(asset=asset)

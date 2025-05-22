@@ -1,45 +1,64 @@
-# file: dashboard/apikeys.py
-import streamlit as st
-from sqlalchemy.exc import IntegrityError
-from models import APIKey, Exchange
-
 def show_apikeys_tab(tab, user, session):
     with tab:
-        st.header('Gestione API Keys')
-        for key in user.api_keys:
-            c1, c2, c3 = st.columns([2, 4, 1])
-            c1.write(key.exchange.name)
-            c2.write(key.api_key)
-            if c3.button('Elimina', key=f'del_{key.id}'):
-                session.delete(key)
-                session.commit()
-                st.rerun()
-        with st.form('form_add'):
-            st.subheader('Aggiungi API Key')
-            exs = session.query(Exchange).order_by(Exchange.name).all()
-            exchange_dict = {e.name: e.id for e in exs}
-            exchange_name = st.selectbox('Exchange', list(exchange_dict.keys()))
-            exchange_id = exchange_dict[exchange_name]
-            a = st.text_input('API Key')
-            s = st.text_input('Secret')
-            if st.form_submit_button('Aggiungi'):
-                if a and s:
-                    # Cerca se esiste già una chiave per questo utente e questo exchange
-                    existing = session.query(APIKey).filter_by(
-                        user_id=user.id, exchange_id=exchange_id
-                    ).first()
-                    if existing:
-                        # Elimina la vecchia API key prima di aggiungere la nuova
-                        session.delete(existing)
+        import streamlit as st
+        from models import APIKey, Exchange
+
+        st.header("Gestione API Keys")
+
+        # 1. Selezione Exchange
+        exchanges = session.query(Exchange).all()
+        if not exchanges:
+            st.error("Nessun exchange disponibile nel sistema.")
+            return
+        exchange_names = [ex.name for ex in exchanges]
+        selected_exchange_name = st.selectbox("Exchange", exchange_names)
+        selected_exchange = next(ex for ex in exchanges if ex.name == selected_exchange_name)
+
+        # 2. Selezione Network
+        col1, col2 = st.columns(2)
+        for net, label in zip([True, False], ["Testnet", "Mainnet"]):
+            with col1 if net else col2:
+                st.subheader(label)
+                key = session.query(APIKey).filter_by(
+                    user_id=user.id,
+                    exchange_id=selected_exchange.id,
+                    is_testnet=net
+                ).first()
+                api_key = st.text_input(
+                    f"{label} API Key",
+                    value=key.api_key if key else "",
+                    key=f"{selected_exchange_name}_{label}_api"
+                )
+                secret_key = st.text_input(
+                    f"{label} Secret Key",
+                    value=key.secret_key if key else "",
+                    type="password",
+                    key=f"{selected_exchange_name}_{label}_secret"
+                )
+                save_btn = st.button(f"Salva {label}", key=f"{selected_exchange_name}_{label}_save")
+                delete_btn = st.button(f"Elimina {label}", key=f"{selected_exchange_name}_{label}_del")
+                if save_btn:
+                    if not api_key or not secret_key:
+                        st.error("API Key e Secret obbligatorie.")
+                    else:
+                        if key:
+                            key.api_key = api_key
+                            key.secret_key = secret_key
+                            st.success(f"{label} aggiornata per {selected_exchange_name}.")
+                        else:
+                            session.add(APIKey(
+                                user_id=user.id,
+                                exchange_id=selected_exchange.id,
+                                api_key=api_key,
+                                secret_key=secret_key,
+                                is_testnet=net
+                            ))
+                            st.success(f"{label} aggiunta per {selected_exchange_name}.")
                         session.commit()
-                    try:
-                        session.add(APIKey(user_id=user.id, exchange_id=exchange_id, api_key=a, secret_key=s))
-                        session.commit()
-                        st.success('API Key inserita/sostituita!')
                         st.rerun()
-                    except IntegrityError:
-                        session.rollback()
-                        st.error('Errore inserimento')
-                else:
-                    st.error('Campi obbligatori')
+                if key and delete_btn:
+                    session.delete(key)
+                    session.commit()
+                    st.success(f"{label} eliminata per {selected_exchange_name}.")
+                    st.rerun()
 

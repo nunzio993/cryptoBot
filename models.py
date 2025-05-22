@@ -1,7 +1,7 @@
 import os
 from sqlalchemy import (
     create_engine, Column, Integer, String, Text, Numeric,
-    ForeignKey, DateTime, func
+    ForeignKey, DateTime, func, Boolean
 )
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 
@@ -49,7 +49,7 @@ class APIKey(Base):
     api_key     = Column(Text, nullable=False)
     secret_key  = Column(Text, nullable=False)
     created_at  = Column(DateTime(timezone=True), server_default=func.now())
-
+    is_testnet = Column(Boolean, default=False)
     user     = relationship("User", back_populates="api_keys")
     exchange = relationship("Exchange", back_populates="api_keys")
 

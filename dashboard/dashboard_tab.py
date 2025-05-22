@@ -2,12 +2,14 @@ import streamlit as st
 import pandas as pd
 import datetime
 from pathlib import Path
+from sqlalchemy import Boolean
 
 from binance.client import Client
 from src.core_and_scheduler import fetch_last_closed_candle
 from symbols import SYMBOLS
 from models import Order
 from src.adapters import BinanceAdapter, BybitAdapter
+from models import APIKey, Exchange
 
 # Mapping timeframe -> (Binance interval, millisecondi)
 INTERVAL_MAP = {
@@ -17,18 +19,51 @@ INTERVAL_MAP = {
     'Daily': ('1d',   24 * 3600 * 1000),
 }
 
-APP_NAME = "Crypto MultiBot"  # scegli il nome che preferisci
+APP_NAME = "Crypto MultiBot"  # scegli il nme che preferisci
 MAIN_ASSET = "USDC"
 
 
 def show_dashboard_tab(tab, user, adapters, session):
-    with tab:
+        with tab:
+                # Usa sempre il key per legarlo allo stato!
+                if "network_mode" not in st.session_state:
+                        st.session_state["network_mode"] = "Testnet"
 
-        network_mode = st.sidebar.radio(
-            "Modalità rete:",
-            ("Testnet", "Mainnet"),
-            index=0
-        )
+                st.sidebar.radio(
+                        "Modalità rete:",
+                        ("Testnet", "Mainnet"),
+                        key="network_mode"
+                )
+                # Ora il valore scelto è sempre in st.session_state["network_mode"]
+
+                network_mode = st.session_state["network_mode"]
+
+                exchange = session.query(Exchange).filter_by(name="binance").first()
+                if not exchange:
+                        st.error("Exchange 'binance' non trovato!")
+                        return
+
+                if network_mode == "Mainnet":
+                        key = session.query(APIKey).filter_by(
+                                user_id=user.id,
+                                exchange_id=exchange.id,
+                                is_testnet=False
+                        ).first()
+                else:
+                        key = session.query(APIKey).filter_by(
+                                user_id=user.id,
+                                exchange_id=exchange.id,
+                                is_testnet=True
+                        ).first()
+
+                if key is None:
+                        st.warning("Non hai configurato le API Key per questa modalità su Binance!")
+                        st.info("Vai al tab 'API Keys' per aggiungerle o modificarle.")
+                        return
+
+                adapters = {
+                        "binance": BinanceAdapter(key.api_key, key.secret_key, testnet=(network_mode == "Testnet"))
+                }
         # --- SCELTA EXCHANGE ---
         exchanges_available = [k for k in adapters.keys()]
         if not exchanges_available:
@@ -56,16 +91,16 @@ def show_dashboard_tab(tab, user, adapters, session):
             symbols_filtered = [s for s in SYMBOLS if s.endswith("USDC")]
             symbol = st.selectbox("Simbolo", symbols_filtered)
             quantity = st.number_input("Quantità", min_value=0.0, format="%.4f")
-            entry_price = st.number_input("Entry Price", min_value=0.0, format="%.2f")
+            entry_price = st.number_input("Entry Price", min_value=0.0, format="%.4f")
             max_entry = st.number_input(
                 "Max Entry Price (annulla oltre)",
                 min_value=entry_price,
-                format="%.2f",
+                format="%.4f",
                 help="Se la candela close > questo, il segnale verrà annullato"
             )
             entry_interval = st.selectbox("Entry Interval", list(INTERVAL_MAP.keys()))
-            take_profit = st.number_input("Take Profit", min_value=0.0, format="%.2f")
-            stop_loss = st.number_input("Stop Loss", min_value=0.0, format="%.2f")
+            take_profit = st.number_input("Take Profit", min_value=0.0, format="%.4f")
+            stop_loss = st.number_input("Stop Loss", min_value=0.0, format="%.4f")
             stop_interval = st.selectbox("Stop Interval", list(INTERVAL_MAP.keys()))
             submitted = st.form_submit_button("Aggiungi Trade")
             if submitted:                # VALIDAZIONE DI BASE

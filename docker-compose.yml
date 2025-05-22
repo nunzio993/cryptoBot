@@ -18,6 +18,16 @@ services:
     ports:
       - "5432:5432"
 
+  telegram_bot:
+    build: .
+    command: python telegram_bot.py
+    env_file:
+      - .env
+    depends_on:
+      - db
+    restart: always
+
+
   core:
     build:
       context: .
