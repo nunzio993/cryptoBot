@@ -164,7 +164,7 @@ st.markdown(
 )
 
 tabs = st.tabs(["Dashboard", "Profile", "API Keys", "Logs"])
-show_dashboard_tab(tabs[0], current_user, adapters, session)
+show_dashboard_tab(tabs[0], current_user, adapters, session, cookies)
 show_profile_tab(tabs[1], current_user, session)
 show_apikeys_tab(tabs[2], current_user, session)
 show_logs_tab(tabs[3])

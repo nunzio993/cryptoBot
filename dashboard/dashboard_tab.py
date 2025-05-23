@@ -23,49 +23,53 @@ INTERVAL_MAP = {
 APP_NAME = "Crypto MultiBot"  # scegli il nme che preferisci
 MAIN_ASSET = "USDC"
 
+def show_dashboard_tab(tab, user, adapters, session, cookies):
+    with tab:
+        # ---- Gestione persistente modalità rete ----
+        if "network_mode" not in st.session_state:
+            st.session_state["network_mode"] = cookies.get("network_mode") or "Testnet"
+
+        def set_network_mode_cookie():
+            cookies["network_mode"] = st.session_state["network_mode"]
+            cookies.save()
+
+        st.sidebar.radio(
+            "Modalità rete:",
+            ("Testnet", "Mainnet"),
+            key="network_mode",
+            on_change=set_network_mode_cookie
+        )
+        # Ora il valore scelto è sempre in st.session_state["network_mode"]
+        network_mode = st.session_state["network_mode"]
+
+        exchange = session.query(Exchange).filter_by(name="binance").first()
+        if not exchange:
+            st.error("Exchange 'binance' non trovato!")
+            return
+
+        if network_mode == "Mainnet":
+            key = session.query(APIKey).filter_by(
+                user_id=user.id,
+                exchange_id=exchange.id,
+                is_testnet=False
+            ).first()
+        else:
+            key = session.query(APIKey).filter_by(
+                user_id=user.id,
+                exchange_id=exchange.id,
+                is_testnet=True
+            ).first()
+
+        if key is None:
+            st.warning("Non hai configurato le API Key per questa modalità su Binance!")
+            st.info("Vai al tab 'API Keys' per aggiungerle o modificarle.")
+            return
+
+        adapters = {
+            "binance": BinanceAdapter(key.api_key, key.secret_key, testnet=(network_mode == "Testnet"))
+        }
 
 
-def show_dashboard_tab(tab, user, adapters, session):
-        with tab:
-                # Usa sempre il key per legarlo allo stato!
-                if "network_mode" not in st.session_state:
-                        st.session_state["network_mode"] = "Testnet"
-
-                st.sidebar.radio(
-                        "Modalità rete:",
-                        ("Testnet", "Mainnet"),
-                        key="network_mode"
-                )
-                # Ora il valore scelto è sempre in st.session_state["network_mode"]
-
-                network_mode = st.session_state["network_mode"]
-
-                exchange = session.query(Exchange).filter_by(name="binance").first()
-                if not exchange:
-                        st.error("Exchange 'binance' non trovato!")
-                        return
-
-                if network_mode == "Mainnet":
-                        key = session.query(APIKey).filter_by(
-                                user_id=user.id,
-                                exchange_id=exchange.id,
-                                is_testnet=False
-                        ).first()
-                else:
-                        key = session.query(APIKey).filter_by(
-                                user_id=user.id,
-                                exchange_id=exchange.id,
-                                is_testnet=True
-                        ).first()
-
-                if key is None:
-                        st.warning("Non hai configurato le API Key per questa modalità su Binance!")
-                        st.info("Vai al tab 'API Keys' per aggiungerle o modificarle.")
-                        return
-
-                adapters = {
-                        "binance": BinanceAdapter(key.api_key, key.secret_key, testnet=(network_mode == "Testnet"))
-                }
         # --- SCELTA EXCHANGE ---
         exchanges_available = [k for k in adapters.keys()]
         if not exchanges_available:
@@ -82,17 +86,20 @@ def show_dashboard_tab(tab, user, adapters, session):
         # --- Form Nuovo Trade in sidebar ---
         st.sidebar.markdown("### Saldo")
         pending  = session.query(Order).filter_by(user_id=user.id, status="PENDING").all()
+        executed = session.query(Order).filter_by(user_id=user.id, status="EXECUTED").all()
 
         try:
             adapter = adapters[selected_exchange]
             balance = adapter.get_balance(MAIN_ASSET)
             st.sidebar.write(f"**{MAIN_ASSET}: {balance:,.2f}**")
 
-            usdc_bloccati = sum(float(o.max_entry) for o in pending if o.max_entry is not None)
+            usdc_bloccati_pending = sum(float(o.quantity) * float(o.max_entry) for o in pending if o.max_entry is not None)
+            usdc_bloccati_executed = sum(float(o.quantity) * float(o.executed_price) for o in executed if o.executed_price is not None)
+            usdc_bloccati = usdc_bloccati_pending + usdc_bloccati_executed
             usdc_disponibili = balance - usdc_bloccati
             st.sidebar.write(f"USDC disponibili: {usdc_disponibili:,.2f}")
         except Exception as e:
-            st.sidebar.warning("Saldo non disponibile")
+            st.sidebar.warning(f"Saldo non disponibile: {e}")
 
 
 
@@ -105,6 +112,7 @@ def show_dashboard_tab(tab, user, adapters, session):
             max_entry = st.number_input(
                 "Max Entry Price (annulla oltre)",
                 min_value=entry_price,
+                value=0.0,
                 format="%.4f",
                 help="Se la candela close > questo, il segnale verrà annullato"
             )
@@ -142,6 +150,7 @@ def show_dashboard_tab(tab, user, adapters, session):
                             created_at=now
                         )
                         session.add(order)
+                        print("DEBUG ---", "entry_price:", entry_price, "max_entry:", max_entry)
                         session.commit()
                         st.success("✅ Trade aggiunto come PENDING")
                         st.rerun()
@@ -152,9 +161,9 @@ def show_dashboard_tab(tab, user, adapters, session):
 
         # ----- TABELLA ORDINI PENDING -----
         st.subheader("Ordini PENDING")
-        header_cols = st.columns([0.6,1.5,1,1.2,1.2,1.2,1.2,1,1.8,1.2])
+        header_cols = st.columns([0.6,1.5,1,1.2,1.2,1.8,1.2,1.2,1,1.8,1.2])
         header_names = [
-            "ID", "Simbolo", "Quantità", "Entry", "Max Entry", "TP", "SL", "TF Entry", "Data creazione", "Azioni"
+            "ID", "Simbolo", "Quantità", "Entry", "Max Entry", "Totale USDC", "TP", "SL", "TF Entry", "Data creazione", "Azioni"
         ]
         for col, name in zip(header_cols, header_names):
             col.markdown(f"**{name}**")
@@ -163,14 +172,14 @@ def show_dashboard_tab(tab, user, adapters, session):
             st.write("Nessun ordine pendente.")
         else:
             for o in pending:
-                cols = st.columns([0.6,1.5,1,1.2,1.2,1.2,1.2,1,1.8,1.2])
+                cols = st.columns([0.6,1.5,1,1.2,1.2,1.8,1.2,1.2,1,1.8,1.2])
                 cols[0].write(o.id)
                 cols[1].write(o.symbol)
                 cols[2].write(float(o.quantity))
                 cols[3].write(float(o.entry_price))
                 cols[4].write(float(o.max_entry) if o.max_entry else "-")
-                # TP/SL EDITABILI senza label
-                with cols[5]:
+                cols[5].write(float(o.quantity) * float(o.max_entry) if o.max_entry else "-")
+                with cols[6]:
                     new_tp = st.number_input(
                         "",
                         min_value=0.0,
@@ -180,7 +189,7 @@ def show_dashboard_tab(tab, user, adapters, session):
                         format="%.2f",
                         label_visibility="collapsed"
                     )
-                with cols[6]:
+                with cols[7]:
                     new_sl = st.number_input(
                         "",
                         min_value=0.0,
@@ -190,10 +199,9 @@ def show_dashboard_tab(tab, user, adapters, session):
                         format="%.2f",
                         label_visibility="collapsed"
                     )
-                cols[7].write(o.entry_interval)
-                cols[8].write(o.created_at.strftime("%Y-%m-%d %H:%M"))
-                # BOTTONI AFFIANCATI in colonna azioni
-                with cols[9]:
+                cols[8].write(o.entry_interval)
+                cols[9].write(o.created_at.strftime("%Y-%m-%d %H:%M"))
+                with cols[10]:
                     c1, c2 = st.columns(2)
                     with c1:
                         if st.button("💾", key=f"update_pending_{o.id}"):
@@ -208,13 +216,15 @@ def show_dashboard_tab(tab, user, adapters, session):
                             o.closed_at = datetime.datetime.now(datetime.timezone.utc)
                             session.commit()
                             st.rerun()
+
         st.markdown("---")
 
         # ----- TABELLA ORDINI ESEGUITI (A MERCATO) -----
+        # ----- TABELLA ORDINI ESEGUITI (A MERCATO) -----
         st.subheader("Ordini A MERCATO")
-        header_cols = st.columns([0.6,1.5,1,1.3,1.8,1.6,1.6,1,1.2])
+        header_cols = st.columns([0.6,1.5,1,1.3,1.8,1.8,1.6,1.6,1,1.2])
         header_names = [
-            "ID", "Simbolo", "Quantità", "Prezzo Esecuzione", "Data Esecuzione", "TP", "SL", "TF SL", "Azioni"
+            "ID", "Simbolo", "Quantità", "Prezzo Esecuzione", "Totale USDC", "Data Esecuzione", "TP", "SL", "TF SL", "Azioni"
         ]
         for col, name in zip(header_cols, header_names):
             col.markdown(f"**{name}**")
@@ -223,14 +233,14 @@ def show_dashboard_tab(tab, user, adapters, session):
             st.write("Nessun ordine eseguito.")
         else:
             for o in executed:
-                cols = st.columns([0.6,1.5,1,1.3,1.8,1.6,1.6,1,1.2])
+                cols = st.columns([0.6,1.5,1,1.3,1.8,1.8,1.6,1.6,1,1.2])
                 cols[0].write(o.id)
                 cols[1].write(o.symbol)
                 cols[2].write(float(o.quantity))
                 cols[3].write(float(o.executed_price or 0))
-                cols[4].write(o.executed_at.strftime("%Y-%m-%d %H:%M") if o.executed_at else "-")
-                # TP/SL EDITABILI senza label sopra
-                with cols[5]:
+                cols[4].write(float(o.quantity) * float(o.executed_price) if o.max_entry else "-")
+                cols[5].write(o.executed_at.strftime("%Y-%m-%d %H:%M") if o.executed_at else "-")
+                with cols[6]:
                     new_tp = st.number_input(
                         "",
                         min_value=0.0,
@@ -240,7 +250,7 @@ def show_dashboard_tab(tab, user, adapters, session):
                         format="%.2f",
                         label_visibility="collapsed"
                     )
-                with cols[6]:
+                with cols[7]:
                     new_sl = st.number_input(
                         "",
                         min_value=0.0,
@@ -250,9 +260,8 @@ def show_dashboard_tab(tab, user, adapters, session):
                         format="%.2f",
                         label_visibility="collapsed"
                     )
-                cols[7].write(o.stop_interval or "-")
-                # BOTTONI AFFIANCATI in colonna azioni
-                with cols[8]:
+                cols[8].write(o.stop_interval or "-")
+                with cols[9]:
                     c1, c2 = st.columns(2)
                     with c1:
                         if st.button("💾", key=f"update_exec_{o.id}"):
@@ -290,7 +299,6 @@ def show_dashboard_tab(tab, user, adapters, session):
                                 except Exception as e:
                                     st.error(f"Errore chiusura: {e}")
         st.markdown("---")
-
 
         # ----- TABELLA ORDINI CHIUSI -----
         st.subheader("Ordini CHIUSI")

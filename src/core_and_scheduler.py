@@ -71,7 +71,7 @@ def auto_execute_pending():
             f"[DEBUG] order={order.id} | created={created_dt} | ts_candle={ts_candle} | "
             f"entry={order.entry_price} | last_close={last_close}"
         )
-        if last_close >= order.entry_price and ts_candle > created_dt:
+        if order.entry_price <= last_close <= order.max_entry and ts_candle > created_dt:
             tlogger.info(f"[DEBUG] order {order.id} TRIGGERED: sending BUY & TP")
             try:
                 qty_str = ('{:.8f}'.format(float(order.quantity))).rstrip('0').rstrip('.')
