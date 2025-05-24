@@ -134,12 +134,11 @@ def show_dashboard_tab(tab, user, adapters, session, cookies):
             symbol = st.selectbox("Simbolo", symbols_filtered)
             quantity = st.number_input("Quantità", min_value=0.0, format="%.4f")
             entry_price = st.number_input("Entry Price", min_value=0.0, format="%.4f")
-            if "max_entry" not in st.session_state or st.session_state["entry_price"] != entry_price:
-                st.session_state["max_entry"] = entry_price + 1  # O il delta che vuoi
-                st.session_state["entry_price"] = entry_price
+            max_entry_default = entry_price + 1
             max_entry = st.number_input(
                 "Max Entry Price (annulla oltre)",
                 min_value=entry_price,
+                value=max_entry_default if quantity == 0 else entry_price + 5,  # fallback intelligente
                 format="%.4f",
                 help="Se la candela close > questo, il segnale verrà annullato"
             )
@@ -155,7 +154,9 @@ def show_dashboard_tab(tab, user, adapters, session, cookies):
                     st.error("❌ Max Entry deve essere ≥ Entry Price.")
                 else:
                     # Controlla ultimo close
-                    last_close = float(fetch_last_closed_candle(symbol, entry_interval)[4])
+                    exchange_name = "binance"  # oppure leggi dinamicamente se usi più exchange
+                    client = adapters[exchange_name].get_client(user_id=user.id)  # recupera il client dal DB
+                    last_close = float(fetch_last_closed_candle(symbol, entry_interval, client)[4])
                     if last_close >= take_profit:
                         st.error(f"❌ Candela precedente {entry_interval} ({last_close:.2f}) ≥ TP; non inserito.")
                     else:

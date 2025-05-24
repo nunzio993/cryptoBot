@@ -1,5 +1,5 @@
 from models import SessionLocal
-from models import Order, SessionLocal
+from models import Order, SessionLocal, APIKey, Exchange
 from binance.exceptions import BinanceAPIException
 from binance.client import Client as BinanceClient
 from binance.client import Client
@@ -25,6 +25,23 @@ class BinanceAdapter(ExchangeAdapter):
     def __init__(self, api_key, api_secret, testnet=True):
         self.client = Client(api_key, api_secret, testnet=testnet)
 
+    def get_client(self, user_id):
+        session = SessionLocal()
+        exchange = session.query(Exchange).filter_by(name="binance").first()
+        if not exchange:
+            raise Exception("Exchange 'binance' non trovato nel DB")
+
+        api_key_entry = (
+            session.query(APIKey)
+            .filter_by(user_id=user_id, exchange_id=exchange.id, is_testnet=False)
+            .first()
+        )
+
+        if not api_key_entry:
+            raise Exception(f"Nessuna API key trovata per user_id={user_id}")
+
+        return Client(api_key_entry.api_key, api_key_entry.secret_key)
+
     def get_balance(self, asset: str) -> float:
         bal = self.client.get_asset_balance(asset=asset)
         return float(bal['free']) if bal and 'free' in bal else 0.0
@@ -43,24 +60,14 @@ class BinanceAdapter(ExchangeAdapter):
     def cancel_order(self, symbol: str, order_id):
         return self.client.cancel_order(symbol=symbol, orderId=order_id)
 
-
     def update_spot_tp_sl(self, symbol, quantity, new_tp, new_sl, user_id=None):
-        """
-        Aggiorna il Take Profit su Binance (modificando il LIMIT SELL) e aggiorna SL solo sul database.
-        - symbol: es. "BNBUSDC"
-        - quantity: float
-        - new_tp: nuovo prezzo take profit
-        - new_sl: nuovo prezzo stop loss (solo per DB, non usato su Binance spot)
-        """
         session = SessionLocal()
         try:
-            # 1. Cancella tutti gli ordini SELL LIMIT attivi per questo simbolo, quantità e user (o solo l'ultimo TP noto)
             open_orders = self.client.get_open_orders(symbol=symbol)
             for order in open_orders:
                 if order['side'] == 'SELL' and float(order['origQty']) == float(quantity):
                     self.client.cancel_order(symbol=symbol, orderId=order['orderId'])
 
-            # 2. Crea un nuovo SELL LIMIT per il nuovo TP
             qty_str = ('{:.8f}'.format(float(quantity))).rstrip('0').rstrip('.')
             self.client.create_order(
                 symbol=symbol,
@@ -71,7 +78,6 @@ class BinanceAdapter(ExchangeAdapter):
                 price=str(new_tp)
             )
 
-            # 3. Aggiorna il DB locale: prendi l’ordine EXECUTED (a mercato) per questo user e simbolo
             order_query = session.query(Order).filter(
                 Order.symbol == symbol,
                 Order.quantity == quantity,
@@ -94,8 +100,6 @@ class BinanceAdapter(ExchangeAdapter):
             raise
         finally:
             session.close()
-
-
 
 class BybitAdapter(ExchangeAdapter):
     def __init__(self, api_key: str, secret_key: str):
