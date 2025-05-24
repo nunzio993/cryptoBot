@@ -114,19 +114,20 @@ def show_dashboard_tab(tab, user, adapters, session, cookies):
         executed = session.query(Order).filter_by(user_id=user.id, status="EXECUTED").all()
 
         try:
-            adapter = adapters[selected_exchange]
-            balance = adapter.get_balance(MAIN_ASSET)
-            st.sidebar.write(f"**{MAIN_ASSET}: {balance:,.2f}**")
+                usdc_balance = adapter.client.get_asset_balance(asset='USDC')
+                usdc_free = float(usdc_balance['free'])
+                usdc_total = float(usdc_balance['free']) + float(usdc_balance['locked'])
 
-            usdc_bloccati_pending = sum(float(o.quantity) * float(o.max_entry) for o in pending if o.max_entry is not None)
-            usdc_bloccati_executed = sum(float(o.quantity) * float(o.executed_price) for o in executed if o.executed_price is not None)
-            usdc_bloccati = usdc_bloccati_pending + usdc_bloccati_executed
-            usdc_disponibili = balance - usdc_bloccati
-            st.sidebar.write(f"USDC disponibili: {usdc_disponibili:,.2f}")
+                usdc_bloccati_pending = sum(
+                        float(o.quantity) * float(o.max_entry)
+                        for o in pending if o.max_entry is not None
+                )
+                usdc_disponibili = usdc_free - usdc_bloccati_pending
+
+                st.sidebar.write(f"**{MAIN_ASSET}: {usdc_total:,.2f}**")
+                st.sidebar.write(f"USDC disponibili: {usdc_disponibili:,.2f}")
         except Exception as e:
-            st.sidebar.warning(f"Saldo non disponibile: {e}")
-
-
+                st.sidebar.warning(f"Errore saldo: {e}")
 
         st.sidebar.subheader("Nuovo Trade")
         with st.sidebar.form("trade_form", clear_on_submit=True):
