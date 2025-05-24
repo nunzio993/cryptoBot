@@ -1,3 +1,5 @@
+import math
+import textwrap
 import streamlit as st
 import pandas as pd
 import datetime
@@ -22,6 +24,29 @@ INTERVAL_MAP = {
 
 APP_NAME = "Crypto MultiBot"  # scegli il nme che preferisci
 MAIN_ASSET = "USDC"
+
+def is_position_open_binance(symbol, user, session, network_mode, required_qty):
+    # Trova la chiave API giusta
+    exchange = session.query(Exchange).filter_by(name="binance").first()
+    if not exchange:
+        return False
+    key = session.query(APIKey).filter_by(
+        user_id=user.id,
+        exchange_id=exchange.id,
+        is_testnet=(network_mode == "Testnet")
+    ).first()
+    if not key:
+        return False
+
+    adapter = BinanceAdapter(key.api_key, key.secret_key, testnet=(network_mode == "Testnet"))
+    balance = adapter.get_balance(symbol.replace('USDC', ''))  # es: "TRXUSDC" -> "TRX"
+    try:
+        # Se hai almeno 0.01 di quell'asset, la posizione è "reale"
+        return float(balance) > 0.01
+    except Exception:
+        return False
+
+
 
 def show_dashboard_tab(tab, user, adapters, session, cookies):
     with tab:
@@ -109,10 +134,12 @@ def show_dashboard_tab(tab, user, adapters, session, cookies):
             symbol = st.selectbox("Simbolo", symbols_filtered)
             quantity = st.number_input("Quantità", min_value=0.0, format="%.4f")
             entry_price = st.number_input("Entry Price", min_value=0.0, format="%.4f")
+            if "max_entry" not in st.session_state or st.session_state["entry_price"] != entry_price:
+                st.session_state["max_entry"] = entry_price + 1  # O il delta che vuoi
+                st.session_state["entry_price"] = entry_price
             max_entry = st.number_input(
                 "Max Entry Price (annulla oltre)",
                 min_value=entry_price,
-                value=0.0,
                 format="%.4f",
                 help="Se la candela close > questo, il segnale verrà annullato"
             )
@@ -129,9 +156,7 @@ def show_dashboard_tab(tab, user, adapters, session, cookies):
                 else:
                     # Controlla ultimo close
                     last_close = float(fetch_last_closed_candle(symbol, entry_interval)[4])
-                    if last_close > max_entry:
-                        st.error(f"❌ Candela {entry_interval} ({last_close:.2f}) > Max Entry; segnale annullato.")
-                    elif last_close >= take_profit:
+                    if last_close >= take_profit:
                         st.error(f"❌ Candela precedente {entry_interval} ({last_close:.2f}) ≥ TP; non inserito.")
                     else:
                         now = datetime.datetime.now(datetime.timezone.utc).isoformat()
@@ -171,6 +196,7 @@ def show_dashboard_tab(tab, user, adapters, session, cookies):
         if not pending:
             st.write("Nessun ordine pendente.")
         else:
+
             for o in pending:
                 cols = st.columns([0.6,1.5,1,1.2,1.2,1.8,1.2,1.2,1,1.8,1.2])
                 cols[0].write(o.id)
@@ -224,7 +250,7 @@ def show_dashboard_tab(tab, user, adapters, session, cookies):
         st.subheader("Ordini A MERCATO")
         header_cols = st.columns([0.6,1.5,1,1.3,1.8,1.8,1.6,1.6,1,1.2])
         header_names = [
-            "ID", "Simbolo", "Quantità", "Prezzo Esecuzione", "Totale USDC", "Data Esecuzione", "TP", "SL", "TF SL", "Azioni"
+            "ID", "Simbolo", "Quantità", "Prezzo Esecuzione", "Totale USDC", "data", "Data Esecuzione", "TP", "SL", "TF SL", "Azioni"
         ]
         for col, name in zip(header_cols, header_names):
             col.markdown(f"**{name}**")
@@ -232,13 +258,35 @@ def show_dashboard_tab(tab, user, adapters, session, cookies):
         if not executed:
             st.write("Nessun ordine eseguito.")
         else:
+
             for o in executed:
                 cols = st.columns([0.6,1.5,1,1.3,1.8,1.8,1.6,1.6,1,1.2])
                 cols[0].write(o.id)
                 cols[1].write(o.symbol)
-                cols[2].write(float(o.quantity))
-                cols[3].write(float(o.executed_price or 0))
-                cols[4].write(float(o.quantity) * float(o.executed_price) if o.max_entry else "-")
+                is_open = is_position_open_binance(o.symbol, user, session, network_mode, o.quantity)
+
+                if is_open:
+                    exchange = session.query(Exchange).filter_by(name="binance").first()
+                    key = session.query(APIKey).filter_by(
+                        user_id=user.id,
+                        exchange_id=exchange.id,
+                        is_testnet=(network_mode == "Testnet")
+                    ).first()
+                    adapter = BinanceAdapter(key.api_key, key.secret_key, testnet=(network_mode == "Testnet"))
+                    asset_name = o.symbol.replace("USDC", "")
+                    balance = adapter.get_balance(asset_name)
+                    last_price = adapter.get_symbol_price(o.symbol)
+                    real_qty = float(balance)
+                    real_price = float(last_price)
+                    real_total = real_qty * real_price
+
+                    cols[2].write(f"{real_qty:,.4f}")
+                    cols[3].write(f"{real_price:,.4f}")
+                    cols[4].write(f"{real_total:,.2f}")
+                else:
+                    cols[2].write(float(o.quantity))
+                    cols[3].write(float(o.executed_price or 0))
+                    cols[4].write(float(o.quantity) * float(o.executed_price) if o.executed_price else "-")
                 cols[5].write(o.executed_at.strftime("%Y-%m-%d %H:%M") if o.executed_at else "-")
                 with cols[6]:
                     new_tp = st.number_input(
@@ -247,7 +295,7 @@ def show_dashboard_tab(tab, user, adapters, session, cookies):
                         value=float(o.take_profit),
                         key=f"tp_exec_{o.id}",
                         step=0.01,
-                        format="%.2f",
+                        format="%.4f",
                         label_visibility="collapsed"
                     )
                 with cols[7]:
@@ -257,7 +305,7 @@ def show_dashboard_tab(tab, user, adapters, session, cookies):
                         value=float(o.stop_loss),
                         key=f"sl_exec_{o.id}",
                         step=0.01,
-                        format="%.2f",
+                        format="%.4f",
                         label_visibility="collapsed"
                     )
                 cols[8].write(o.stop_interval or "-")
@@ -298,8 +346,11 @@ def show_dashboard_tab(tab, user, adapters, session, cookies):
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"Errore chiusura: {e}")
-        st.markdown("---")
 
+
+
+
+        st.markdown("---")
         # ----- TABELLA ORDINI CHIUSI -----
         st.subheader("Ordini CHIUSI")
         header_cols = st.columns([0.6,0.8,1.5,1,1.2,1.3,1.2,1.2,1,1,1.8,1.8,1])

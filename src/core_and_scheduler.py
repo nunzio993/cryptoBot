@@ -110,8 +110,28 @@ def auto_execute_pending():
                 ))
             except BinanceAPIException as e:
                 tlogger.error(f"[ERROR] Binance API exec {order.id}: {e}")
+                continue
             except Exception as e:
                 tlogger.error(f"[ERROR] Unexpected exec {order.id}: {e}")
+                continue
         else:
             tlogger.info(f"[DEBUG] order {order.id} NOT triggered")
 
+
+def close_position_market(self, symbol, quantity):
+    """Vende a mercato la quantità specificata di symbol."""
+    try:
+        qty_str = ('{:.8f}'.format(float(quantity))).rstrip('0').rstrip('.')
+        order = self.client.create_order(
+            symbol=symbol,
+            side='SELL',
+            type='MARKET',
+            quantity=qty_str
+        )
+        return order
+    except BinanceAPIException as e:
+        print(f"Errore BinanceAPI nella chiusura posizione: {e}")
+        raise
+    except Exception as e:
+        print(f"Errore generico nella chiusura posizione: {e}")
+        raise

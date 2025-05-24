@@ -17,6 +17,11 @@ class ExchangeAdapter:
         raise NotImplementedError
 
 class BinanceAdapter(ExchangeAdapter):
+
+    def get_symbol_price(self, symbol):
+        ticker = self.client.get_symbol_ticker(symbol=symbol)
+        return float(ticker['price'])
+
     def __init__(self, api_key, api_secret, testnet=True):
         self.client = Client(api_key, api_secret, testnet=testnet)
 
@@ -89,6 +94,8 @@ class BinanceAdapter(ExchangeAdapter):
             raise
         finally:
             session.close()
+
+
 
 class BybitAdapter(ExchangeAdapter):
     def __init__(self, api_key: str, secret_key: str):
