@@ -5,6 +5,7 @@ from binance.client import Client as BinanceClient
 from binance.client import Client
 
 import ccxt
+import math 
 
 class ExchangeAdapter:
     def get_balance(self, asset: str) -> float:
@@ -17,6 +18,53 @@ class ExchangeAdapter:
         raise NotImplementedError
 
 class BinanceAdapter(ExchangeAdapter):
+
+    def __init__(self, api_key, api_secret, testnet=True):
+        self.client = Client(api_key, api_secret, testnet=testnet)
+
+    def get_client(self, user_id):
+        session = SessionLocal()
+
+    def truncate(self, quantity: float, precision: int) -> float:
+        factor = 10 ** precision
+        return math.floor(quantity * factor) / factor
+
+    def get_symbol_precision(self, symbol: str) -> int:
+        """
+        Recupera la precisione corretta per un simbolo su Binance.
+        """
+        info = self.client.get_exchange_info()
+        for s in info['symbols']:
+            if s['symbol'] == symbol:
+                for f in s['filters']:
+                    if f['filterType'] == 'LOT_SIZE':
+                        step_size = float(f['stepSize'])
+                        return abs(int(round(math.log10(step_size))))
+        return 3  # fallback se non trova nulla
+
+    def close_position_market(self, symbol, quantity):
+        """
+        Chiude una posizione su Binance spot vendendo a mercato,
+        arrotondando per difetto per evitare errori di saldo.
+        """
+        try:
+            precision = self.get_symbol_precision(symbol)
+            truncated_qty = self.truncate(float(quantity)*0.999, precision)
+            qty_str = ('{:.8f}'.format(truncated_qty)).rstrip('0').rstrip('.')
+
+            order = self.client.create_order(
+                symbol=symbol,
+                side='SELL',
+                type='MARKET',
+                quantity=qty_str
+            )
+            return order
+        except BinanceAPIException as e:
+            print(f"Errore BinanceAPI nella chiusura posizione: {e}")
+            raise
+        except Exception as e:
+            print(f"Errore generico nella chiusura posizione: {e}")
+            raise
 
     def get_symbol_price(self, symbol):
         ticker = self.client.get_symbol_ticker(symbol=symbol)
