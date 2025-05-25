@@ -14,6 +14,8 @@ from models import Order, User, SessionLocal
 from src.adapters import BinanceAdapter, BybitAdapter
 from models import APIKey, Exchange
 
+MIN_VISIBLE_VALUE_USD = 5.0
+
 # Mapping timeframe -> (Binance interval, millisecondi)
 INTERVAL_MAP = {
     'M5':    ('5m',    5 * 60 * 1000),
@@ -130,10 +132,12 @@ def show_dashboard_tab(tab, user, adapters, session, cookies):
                 st.sidebar.warning(f"Errore saldo: {e}")
 
         st.sidebar.subheader("Nuovo Trade")
+
+        st.sidebar.markdown("---")
         with st.sidebar.form("trade_form", clear_on_submit=True):
             symbols_filtered = [s for s in SYMBOLS if s.endswith("USDC")]
             symbol = st.selectbox("Simbolo", symbols_filtered)
-            quantity = st.number_input("Quantità", min_value=0.0, format="%.4f")
+            quantity = st.number_input("Quantità", min_value=0.0, format="%.4f", key="quantity")
             entry_price = st.number_input("Entry Price", min_value=0.0, format="%.4f")
             max_entry_default = entry_price + 1
             max_entry = st.number_input(
@@ -141,7 +145,8 @@ def show_dashboard_tab(tab, user, adapters, session, cookies):
                 min_value=entry_price,
                 value=max_entry_default if quantity == 0 else entry_price + 5,  # fallback intelligente
                 format="%.4f",
-                help="Se la candela close > questo, il segnale verrà annullato"
+                help="Se la candela close > questo, il segnale verrà annullato",
+                key="max_entry"
             )
             entry_interval = st.selectbox("Entry Interval", list(INTERVAL_MAP.keys()))
             take_profit = st.number_input("Take Profit", min_value=0.0, format="%.4f")
@@ -181,7 +186,6 @@ def show_dashboard_tab(tab, user, adapters, session, cookies):
                         session.commit()
                         st.success("✅ Trade aggiunto come PENDING")
                         st.rerun()
-
         # ----------- QUERY E TABELLE ORDINI -----------
         pending  = session.query(Order).filter_by(user_id=user.id, status="PENDING").all()
         executed = session.query(Order).filter_by(user_id=user.id, status="EXECUTED").all()
@@ -198,14 +202,34 @@ def show_dashboard_tab(tab, user, adapters, session, cookies):
         if not pending:
             st.write("Nessun ordine pendente.")
         else:
+            update_message = None  # messaggio da mostrare dopo il ciclo
+            update_message = None  # messaggio da mostrare dopo il ciclo
 
             for o in pending:
                 cols = st.columns([0.6,1.5,1,1.2,1.2,1.8,1.2,1.2,1,1.8,1.2])
                 cols[0].write(o.id)
                 cols[1].write(o.symbol)
                 cols[2].write(float(o.quantity))
-                cols[3].write(float(o.entry_price))
-                cols[4].write(float(o.max_entry) if o.max_entry else "-")
+                with cols[3]:
+                    new_entry = st.number_input(
+                        "",
+                        min_value=0.0,
+                        value=float(o.entry_price),
+                        key=f"entry_pending_{o.id}",
+                        step=0.01,
+                        format="%.4f",
+                        label_visibility="collapsed"
+                    )
+                with cols[4]:
+                    new_max_entry = st.number_input(
+                        "",
+                        min_value=new_entry,
+                        value=float(o.max_entry) if o.max_entry else new_entry + 5,
+                        key=f"max_entry_pending_{o.id}",
+                        step=0.01,
+                        format="%.4f",
+                        label_visibility="collapsed"
+                    )
                 cols[5].write(float(o.quantity) * float(o.max_entry) if o.max_entry else "-")
                 with cols[6]:
                     new_tp = st.number_input(
@@ -233,17 +257,26 @@ def show_dashboard_tab(tab, user, adapters, session, cookies):
                     c1, c2 = st.columns(2)
                     with c1:
                         if st.button("💾", key=f"update_pending_{o.id}"):
-                            o.take_profit = new_tp
-                            o.stop_loss = new_sl
-                            session.commit()
-                            st.success(f"TP/SL aggiornati per ordine {o.id} (PENDING)")
-                            st.rerun()
+                            try:
+                                o.entry_price = new_entry
+                                o.max_entry = new_max_entry
+                                o.take_profit = new_tp
+                                o.stop_loss = new_sl
+                                session.commit()
+                                update_message = f"✅ Ordine {o.id} aggiornato con successo"
+                            except Exception as e:
+                                session.rollback()
+                                update_message = f"❌ Errore aggiornamento ordine {o.id}: {e}"
                     with c2:
                         if st.button("❌", key=f"cancel_{o.id}"):
                             o.status = "CANCELLED"
                             o.closed_at = datetime.datetime.now(datetime.timezone.utc)
                             session.commit()
                             st.rerun()
+
+            # Mostra il messaggio di aggiornamento dopo la tabella
+            if update_message:
+                st.success(update_message) if update_message.startswith("✅") else st.error(update_message)
 
         st.markdown("---")
 
@@ -262,11 +295,29 @@ def show_dashboard_tab(tab, user, adapters, session, cookies):
         else:
 
             for o in executed:
+                is_open = is_position_open_binance(o.symbol, user, session, network_mode, o.quantity)
+
+                if is_open:
+                    exchange = session.query(Exchange).filter_by(name="binance").first()
+                    key = session.query(APIKey).filter_by(
+                        user_id=user.id,
+                        exchange_id=exchange.id,
+                        is_testnet=(network_mode == "Testnet")
+                    ).first()
+                    adapter = BinanceAdapter(key.api_key, key.secret_key, testnet=(network_mode == "Testnet"))
+                    asset_name = o.symbol.replace("USDC", "")
+                    balance = adapter.get_balance(asset_name)
+                    last_price = adapter.get_symbol_price(o.symbol)
+                    real_qty = float(balance)
+                    real_price = float(last_price)
+                    real_total = real_qty * real_price
+
+                    if real_total < MIN_VISIBLE_VALUE_USD:
+                        continue
+
                 cols = st.columns([0.6,1.5,1,1.3,1.8,1.8,1.6,1.6,1,1.2])
                 cols[0].write(o.id)
                 cols[1].write(o.symbol)
-                is_open = is_position_open_binance(o.symbol, user, session, network_mode, o.quantity)
-
                 if is_open:
                     exchange = session.query(Exchange).filter_by(name="binance").first()
                     key = session.query(APIKey).filter_by(
