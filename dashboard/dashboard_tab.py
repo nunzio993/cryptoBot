@@ -131,64 +131,77 @@ def show_dashboard_tab(tab, user, adapters, session, cookies):
         except Exception as e:
                 st.sidebar.warning(f"Errore saldo: {e}")
 
+        # --- Form Nuovo Trade in sidebar ---
+        pending  = session.query(Order).filter_by(user_id=user.id, status="PENDING").all()
+        executed = session.query(Order).filter_by(user_id=user.id, status="EXECUTED").all()
+
         st.sidebar.subheader("Nuovo Trade")
 
-        st.sidebar.markdown("---")
-        with st.sidebar.form("trade_form", clear_on_submit=True):
-            symbols_filtered = [s for s in SYMBOLS if s.endswith("USDC")]
-            symbol = st.selectbox("Simbolo", symbols_filtered)
-            quantity = st.number_input("Quantità", min_value=0.0, format="%.4f", key="quantity")
-            entry_price = st.number_input("Entry Price", min_value=0.0, format="%.4f")
-            max_entry_default = entry_price + 1
-            max_entry = st.number_input(
+        symbols_filtered = [s for s in SYMBOLS if s.endswith("USDC")]
+        symbol = st.sidebar.selectbox("Simbolo", symbols_filtered)
+        quantity = st.sidebar.number_input("Quantità", min_value=0.0, format="%.4f", key="quantity")
+        entry_price = st.sidebar.number_input("Entry Price", min_value=0.0, format="%.4f")
+        max_entry_default = entry_price + 1
+        max_entry = st.sidebar.number_input(
                 "Max Entry Price (annulla oltre)",
                 min_value=entry_price,
-                value=max_entry_default if quantity == 0 else entry_price + 5,  # fallback intelligente
+                value=max_entry_default if quantity == 0 else entry_price + 5,
                 format="%.4f",
                 help="Se la candela close > questo, il segnale verrà annullato",
                 key="max_entry"
-            )
-            entry_interval = st.selectbox("Entry Interval", list(INTERVAL_MAP.keys()))
-            take_profit = st.number_input("Take Profit", min_value=0.0, format="%.4f")
-            stop_loss = st.number_input("Stop Loss", min_value=0.0, format="%.4f")
-            stop_interval = st.selectbox("Stop Interval", list(INTERVAL_MAP.keys()))
-            submitted = st.form_submit_button("Aggiungi Trade")
-            if submitted:                # VALIDAZIONE DI BASE
+        )
+        entry_interval = st.sidebar.selectbox("Entry Interval", list(INTERVAL_MAP.keys()))
+        take_profit = st.sidebar.number_input("Take Profit", min_value=0.0, format="%.4f")
+        stop_loss = st.sidebar.number_input("Stop Loss", min_value=0.0, format="%.4f")
+        stop_interval = st.sidebar.selectbox("Stop Interval", list(INTERVAL_MAP.keys()))
+
+        # Calcolo USDC da bloccare in tempo reale
+        if quantity > 0 and max_entry > 0:
+                st.sidebar.markdown(
+                        f"<b>USDC da bloccare:</b> <span style='font-size:18px;color:#33d'>{quantity * max_entry:,.2f}</span>",
+                        unsafe_allow_html=True
+                )
+
+        # Bottone per aggiungere il trade
+        if st.sidebar.button("Aggiungi Trade"):
                 if not (stop_loss < entry_price < take_profit):
-                    st.error("❌ Deve valere Stop Loss < Entry Price < Take Profit.")
+                        st.sidebar.error("❌ Deve valere Stop Loss < Entry Price < Take Profit.")
                 elif max_entry < entry_price:
-                    st.error("❌ Max Entry deve essere ≥ Entry Price.")
+                        st.sidebar.error("❌ Max Entry deve essere ≥ Entry Price.")
                 else:
-                    # Controlla ultimo close
-                    exchange_name = "binance"  # oppure leggi dinamicamente se usi più exchange
-                    client = adapters[exchange_name].get_client(user_id=user.id)  # recupera il client dal DB
-                    last_close = float(fetch_last_closed_candle(symbol, entry_interval, client)[4])
-                    if last_close >= take_profit:
-                        st.error(f"❌ Candela precedente {entry_interval} ({last_close:.2f}) ≥ TP; non inserito.")
-                    else:
-                        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-                        order = Order(
-                            user_id=user.id,
-                            symbol=symbol,
-                            side="LONG",
-                            quantity=quantity,
-                            status="PENDING",
-                            entry_price=entry_price,
-                            max_entry=max_entry,
-                            take_profit=take_profit,
-                            stop_loss=stop_loss,
-                            entry_interval=entry_interval,
-                            stop_interval=stop_interval,
-                            created_at=now
-                        )
-                        session.add(order)
-                        print("DEBUG ---", "entry_price:", entry_price, "max_entry:", max_entry)
-                        session.commit()
-                        st.success("✅ Trade aggiunto come PENDING")
-                        st.rerun()
+                        exchange_name = "binance"
+                        client = adapters[exchange_name].get_client(user_id=user.id)
+                        last_close = float(fetch_last_closed_candle(symbol, entry_interval, client)[4])
+                        if last_close >= take_profit:
+                                st.sidebar.error(f"❌ Candela precedente {entry_interval} ({last_close:.2f}) ≥ TP; non inserito.")
+                        else:
+                                now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                                order = Order(
+                                        user_id=user.id,
+                                        symbol=symbol,
+                                        side="LONG",
+                                        quantity=quantity,
+                                        status="PENDING",
+                                        entry_price=entry_price,
+                                        max_entry=max_entry,
+                                        take_profit=take_profit,
+                                        stop_loss=stop_loss,
+                                        entry_interval=entry_interval,
+                                        stop_interval=stop_interval,
+                                        created_at=now
+                                )
+                                session.add(order)
+                                print("DEBUG ---", "entry_price:", entry_price, "max_entry:", max_entry)
+                                session.commit()
+                                st.sidebar.success("✅ Trade aggiunto come PENDING")
+                                st.rerun()
+
+
+
         # ----------- QUERY E TABELLE ORDINI -----------
         pending  = session.query(Order).filter_by(user_id=user.id, status="PENDING").all()
         executed = session.query(Order).filter_by(user_id=user.id, status="EXECUTED").all()
+
 
         # ----- TABELLA ORDINI PENDING -----
         st.subheader("Ordini PENDING")
