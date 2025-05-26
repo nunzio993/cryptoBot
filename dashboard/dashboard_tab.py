@@ -201,8 +201,10 @@ def show_dashboard_tab(tab, user, adapters, session, cookies):
         # ----------- QUERY E TABELLE ORDINI -----------
         pending  = session.query(Order).filter_by(user_id=user.id, status="PENDING").all()
         executed = session.query(Order).filter_by(user_id=user.id, status="EXECUTED").all()
-
-
+   
+        if "pending_update_message" not in st.session_state:
+            st.session_state.pending_update_message = ""
+        update_message =""
         # ----- TABELLA ORDINI PENDING -----
         st.subheader("Ordini PENDING")
         header_cols = st.columns([0.6,1.5,1,1.2,1.2,1.8,1.2,1.2,1,1.8,1.2])
@@ -268,6 +270,7 @@ def show_dashboard_tab(tab, user, adapters, session, cookies):
                 cols[9].write(o.created_at.strftime("%Y-%m-%d %H:%M"))
                 with cols[10]:
                     c1, c2 = st.columns(2)
+
                     with c1:
                         if st.button("💾", key=f"update_pending_{o.id}"):
                             try:
@@ -276,126 +279,171 @@ def show_dashboard_tab(tab, user, adapters, session, cookies):
                                 o.take_profit = new_tp
                                 o.stop_loss = new_sl
                                 session.commit()
-                                update_message = f"✅ Ordine {o.id} aggiornato con successo"
+                                st.session_state.pending_update_message = f"✅ Ordine {o.id} aggiornato con successo"
+                                st.rerun()
                             except Exception as e:
                                 session.rollback()
-                                update_message = f"❌ Errore aggiornamento ordine {o.id}: {e}"
+                                st.session_state.pending_update_message = f"❌ Errore aggiornamento ordine {o.id}: {e}"
+
                     with c2:
                         if st.button("❌", key=f"cancel_{o.id}"):
                             o.status = "CANCELLED"
                             o.closed_at = datetime.datetime.now(datetime.timezone.utc)
                             session.commit()
+                            st.session_state.pending_update_message = f"❌ Ordine {o.id} cancellato"
                             st.rerun()
 
-            # Mostra il messaggio di aggiornamento dopo la tabella
-            if update_message:
-                st.success(update_message) if update_message.startswith("✅") else st.error(update_message)
+                    # ... DOPO il ciclo pending ...
+            if st.session_state.pending_update_message:
+                color = "#067d06" if st.session_state.pending_update_message.startswith("✅") else "#be2323"
+                bgcolor = "#f6fff5" if st.session_state.pending_update_message.startswith("✅") else "#fff5f5"
+                st.markdown(
+                    f"<div style='margin-top:24px; font-size:18px; color:{color}; background:{bgcolor}; padding:14px 20px; border-radius:12px; max-width:500px;'>"
+                    f"{st.session_state.pending_update_message}"
+                    "</div>",
+                    unsafe_allow_html=True
+                )
+                st.session_state.pending_update_message = ""
+
 
         st.markdown("---")
 
         # ----- TABELLA ORDINI ESEGUITI (A MERCATO) -----
 
-        header_cols = st.columns([0.6, 1.5, 1, 1.3, 1.8, 1.6, 1.2, 1, 1, 1.2])
+        st.subheader("Ordini A MERCATO")
+        header_cols = st.columns([0.6,1.5,1,1.3,1.8,1.8,1.6,1.6,1,1.2])
         header_names = [
-                "ID", "Simbolo", "Quantità", "Prezzo Esecuzione", "Totale USDC", "Data Esecuzione", "TP", "SL", "TF SL", "Azioni"
+            "ID", "Simbolo", "Quantità", "Prezzo Esecuzione", "Totale USDC", "Data Esecuzione", "TP", "SL", "TF SL", "Azioni"
         ]
         for col, name in zip(header_cols, header_names):
-                col.markdown(f"**{name}**")
+            col.markdown(f"**{name}**")
+
+        # CREA variabile di stato per il messaggio (fuori dal ciclo!)
+        if "executed_update_message" not in st.session_state:
+            st.session_state.executed_update_message = ""
 
         if not executed:
-                st.write("Nessun ordine eseguito.")
+            st.write("Nessun ordine eseguito.")
         else:
-                for o in executed:
-                        is_open = is_position_open_binance(o.symbol, user, session, network_mode, o.quantity)
+            for o in executed:
+                is_open = is_position_open_binance(o.symbol, user, session, network_mode, o.quantity)
 
-                        if is_open:
-                                exchange = session.query(Exchange).filter_by(name="binance").first()
-                                key = session.query(APIKey).filter_by(
-                                        user_id=user.id,
-                                        exchange_id=exchange.id,
-                                        is_testnet=(network_mode == "Testnet")
-                                ).first()
-                                adapter = BinanceAdapter(key.api_key, key.secret_key, testnet=(network_mode == "Testnet"))
-                                asset_name = o.symbol.replace("USDC", "")
-                                balance = adapter.get_balance(asset_name)
-                                last_price = adapter.get_symbol_price(o.symbol)
-                                real_qty = float(balance)
-                                real_price = float(last_price)
-                                real_total = real_qty * real_price
+                if is_open:
+                    exchange = session.query(Exchange).filter_by(name="binance").first()
+                    key = session.query(APIKey).filter_by(
+                        user_id=user.id,
+                        exchange_id=exchange.id,
+                        is_testnet=(network_mode == "Testnet")
+                    ).first()
+                    adapter = BinanceAdapter(key.api_key, key.secret_key, testnet=(network_mode == "Testnet"))
+                    asset_name = o.symbol.replace("USDC", "")
+                    balance = adapter.get_balance(asset_name)
+                    last_price = adapter.get_symbol_price(o.symbol)
+                    real_qty = float(balance)
+                    real_price = float(last_price)
+                    real_total = real_qty * real_price
 
-                                if real_total < MIN_VISIBLE_VALUE_USD:
-                                        continue
+                    if real_total < MIN_VISIBLE_VALUE_USD:
+                        continue
 
-                        cols = st.columns([0.6, 1.5, 1, 1.3, 1.8, 1.6, 1.2, 1, 1, 1.2])
-                        cols[0].write(o.id)
-                        cols[1].write(o.symbol)
-                        if is_open:
-                                cols[2].write(f"{real_qty:,.4f}")
-                                cols[3].write(f"{real_price:,.4f}")
-                                cols[4].write(f"{real_total:,.2f}")
-                        else:
-                                cols[2].write(float(o.quantity))
-                                cols[3].write(float(o.executed_price or 0))
-                                cols[4].write(float(o.quantity) * float(o.executed_price) if o.executed_price else "-")
-                        cols[5].write(o.executed_at.strftime("%Y-%m-%d %H:%M") if o.executed_at else "-")
-                        with cols[6]:
-                                new_tp = st.number_input(
-                                        "",
-                                        min_value=0.0,
-                                        value=float(o.take_profit),
-                                        key=f"tp_exec_{o.id}",
-                                        step=0.01,
-                                        format="%.4f",
-                                        label_visibility="collapsed"
-                                )
-                        with cols[7]:
-                                new_sl = st.number_input(
-                                        "",
-                                        min_value=0.0,
-                                        value=float(o.stop_loss),
-                                        key=f"sl_exec_{o.id}",
-                                        step=0.01,
-                                        format="%.4f",
-                                        label_visibility="collapsed"
-                                )
-                        cols[8].write(o.stop_interval or "-")
-                        with cols[9]:
-                                c1, c2 = st.columns(2)
-                                with c1:
-                                        if st.button("💾", key=f"update_exec_{o.id}"):
-                                                try:
-                                                        adapter = adapters.get("binance")
-                                                        if not adapter:
-                                                                st.error("Adapter Binance non configurato")
-                                                        else:
-                                                                adapter.update_spot_tp_sl(
-                                                                        o.symbol,
-                                                                        o.quantity,
-                                                                        new_tp,
-                                                                        new_sl,
-                                                                        user_id=user.id
-                                                                )
-                                                                o.take_profit = new_tp
-                                                                o.stop_loss = new_sl
-                                                                session.commit()
-                                                                st.success(f"TP/SL aggiornati su Binance per ordine {o.id}")
-                                                                st.rerun()
-                                                except Exception as e:
-                                                        st.error(f"Errore aggiornamento su Binance: {e}")
-                                with c2:
-                                        if st.button("❌", key=f"close_{o.id}"):
-                                                adapter = adapters.get("binance")
-                                                if not adapter:
-                                                        st.error("Adapter Binance non configurato")
-                                                else:
-                                                        try:
-                                                                adapter.close_position_market(o.symbol, float(o.quantity))
-                                                                o.status    = "CLOSED_MANUAL"
-                                                                o.closed_at = datetime.datetime.now(datetime.timezone.utc)
-                                                                session.commit()
-                                                                st.rerun()
-                                                        except Exception as e:
-                                                                st.error(f"Errore chiusura: {e}")
+                cols = st.columns([0.6,1.5,1,1.3,1.8,1.8,1.6,1.6,1,1.2])
+                cols[0].write(o.id)
+                cols[1].write(o.symbol)
+                if is_open:
+                    exchange = session.query(Exchange).filter_by(name="binance").first()
+                    key = session.query(APIKey).filter_by(
+                        user_id=user.id,
+                        exchange_id=exchange.id,
+                        is_testnet=(network_mode == "Testnet")
+                    ).first()
+                    adapter = BinanceAdapter(key.api_key, key.secret_key, testnet=(network_mode == "Testnet"))
+                    asset_name = o.symbol.replace("USDC", "")
+                    balance = adapter.get_balance(asset_name)
+                    last_price = adapter.get_symbol_price(o.symbol)
+                    real_qty = float(balance)
+                    real_price = float(last_price)
+                    real_total = real_qty * real_price
+
+                    cols[2].write(f"{real_qty:,.4f}")
+                    cols[3].write(f"{real_price:,.4f}")
+                    cols[4].write(f"{real_total:,.2f}")
+                else:
+                    cols[2].write(float(o.quantity))
+                    cols[3].write(float(o.executed_price or 0))
+                    cols[4].write(float(o.quantity) * float(o.executed_price) if o.executed_price else "-")
+                cols[5].write(o.executed_at.strftime("%Y-%m-%d %H:%M") if o.executed_at else "-")
+                with cols[6]:
+                    new_tp = st.number_input(
+                        "",
+                        min_value=0.0,
+                        value=float(o.take_profit),
+                        key=f"tp_exec_{o.id}",
+                        step=0.01,
+                        format="%.4f",
+                        label_visibility="collapsed"
+                    )
+                with cols[7]:
+                    new_sl = st.number_input(
+                        "",
+                        min_value=0.0,
+                        value=float(o.stop_loss),
+                        key=f"sl_exec_{o.id}",
+                        step=0.01,
+                        format="%.4f",
+                        label_visibility="collapsed"
+                    )
+                cols[8].write(o.stop_interval or "-")
+                with cols[9]:
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        if st.button("💾", key=f"update_exec_{o.id}"):
+                            try:
+                                adapter = adapters.get("binance")
+                                if not adapter:
+                                    st.session_state.executed_update_message = "❌ Adapter Binance non configurato"
+                                else:
+                                    adapter.update_spot_tp_sl(
+                                        o.symbol,
+                                        o.quantity,
+                                        new_tp,
+                                        new_sl,
+                                        user_id=user.id
+                                    )
+                                    o.take_profit = new_tp
+                                    o.stop_loss = new_sl
+                                    session.commit()
+                                    st.session_state.executed_update_message = f"✅ TP/SL aggiornati su Binance per ordine {o.id}"
+                                st.rerun()
+                            except Exception as e:
+                                st.session_state.executed_update_message = f"❌ Errore aggiornamento su Binance: {e}"
+                    with c2:
+                        if st.button("❌", key=f"close_{o.id}"):
+                            adapter = adapters.get("binance")
+                            if not adapter:
+                                st.session_state.executed_update_message = "❌ Adapter Binance non configurato"
+                            else:
+                                try:
+                                    adapter.close_position_market(o.symbol, float(o.quantity))
+                                    o.status    = "CLOSED_MANUAL"
+                                    o.closed_at = datetime.datetime.now(datetime.timezone.utc)
+                                    session.commit()
+                                    st.session_state.executed_update_message = f"❌ Ordine {o.id} chiuso manualmente"
+                                except Exception as e:
+                                    st.session_state.executed_update_message = f"❌ Errore chiusura: {e}"
+                            st.rerun()
+
+        # DOPO LA TABELLA: mostra il messaggio, POI puliscilo!
+        if st.session_state.executed_update_message:
+            color = "#067d06" if st.session_state.executed_update_message.startswith("✅") else "#be2323"
+            bgcolor = "#f6fff5" if st.session_state.executed_update_message.startswith("✅") else "#fff5f5"
+            st.markdown(
+                f"<div style='margin-top:24px; font-size:18px; color:{color}; background:{bgcolor}; padding:14px 20px; border-radius:12px; max-width:500px;'>"
+                f"{st.session_state.executed_update_message}"
+                "</div>",
+                unsafe_allow_html=True
+            )
+            st.session_state.executed_update_message = ""
+
 
 
 
