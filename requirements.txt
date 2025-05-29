@@ -15,4 +15,5 @@ itsdangerous>=2.1.2
 streamlit-cookies-manager>=0.0.8
 bcrypt
 python-dotenv
+streamlit-js-eval
 

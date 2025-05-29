@@ -11,10 +11,10 @@ BOT_TOKEN = os.getenv("TG_BOT_TOKEN")
 DB_PATH   = os.getenv("DB_PATH", "trades.db")
 
 def get_user_chat_ids(user_id):
-    session = SessionLocal()
-    rows = session.query(ChatSubscription).filter_by(user_id=user_id).all()
-    session.close()
-    return [row.chat_id for row in rows]
+    with SessionLocal() as session:
+        rows = session.query(ChatSubscription).filter_by(user_id=user_id).all()
+        return [row.chat_id for row in rows]
+	
 
 def _send_message_sync(chat_id, text, parse_mode=None):
     """

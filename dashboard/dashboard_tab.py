@@ -292,7 +292,9 @@ def show_dashboard_tab(tab, user, adapters, session, cookies):
                             session.commit()
                             st.session_state.pending_update_message = f"❌ Ordine {o.id} cancellato"
                             st.rerun()
-
+            for o in pending:
+                st.sidebar.write(f"DEBUG Pending: ID={o.id}, Qty={o.quantity}, MaxEntry={o.max_entry}, Bloccato={float(o.quantity) * float(o.max_entry) if o.max_entry else '-'}")
+            st.sidebar.write(f"DEBUG usdc_bloccati_pending: {usdc_bloccati_pending}")
                     # ... DOPO il ciclo pending ...
             if st.session_state.pending_update_message:
                 color = "#067d06" if st.session_state.pending_update_message.startswith("✅") else "#be2323"
