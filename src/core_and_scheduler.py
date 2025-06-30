@@ -77,7 +77,11 @@ def auto_execute_pending():
 
             tlogger.info(f"[DEBUG] order={order.id} | created={created_dt} | ts_candle={ts_candle} | entry={order.entry_price} | last_close={last_close}")
 
-            if order.entry_price <= last_close <= order.max_entry and ts_candle > created_dt:
+            if (
+                order.entry_price <= last_close <= order.max_entry and
+                ts_candle > created_dt and                  # candela successiva alla creazione
+                (not order.executed_at)                     # esegui solo se mai eseguito
+            ):
                 exchange = session.query(Exchange).filter_by(name="binance").first()
                 api_key_obj = session.query(APIKey).filter_by(
                     user_id=order.user_id,
@@ -170,4 +174,77 @@ def close_position_market(self, symbol, quantity):
     except Exception as e:
         print(f"Errore generico nella chiusura posizione: {e}")
         raise
+        
+def check_and_execute_stop_loss():
+    with SessionLocal() as session:
+        open_orders = session.query(Order).filter(Order.status == 'EXECUTED').all()
+        for order in open_orders:
+            try:
+                client = get_binance_client(order.user_id)
+            except Exception as e:
+                tlogger.error(f"[ERROR] API Binance per SL user {order.user_id}: {e}")
+                continue
 
+            # Considera la candela daily/interval di stop, non di entry
+            interval = order.stop_interval if order.stop_interval else order.entry_interval
+            candle = fetch_last_closed_candle(order.symbol, interval, client)
+            last_close = float(candle[4])
+            ts_candle = datetime.fromtimestamp(candle[0] / 1000, tz=timezone.utc)
+
+            # PATCH: chiusura candela <= stop_loss e candela successiva all'apertura
+            if (
+                order.stop_loss is not None and
+                last_close <= float(order.stop_loss) and
+                ts_candle > order.executed_at
+            ):
+                exchange = session.query(Exchange).filter_by(name="binance").first()
+                api_key_obj = session.query(APIKey).filter_by(
+                    user_id=order.user_id,
+                    exchange_id=exchange.id,
+                    is_testnet=False
+                ).first()
+                adapter = BinanceAdapter(
+                    api_key=api_key_obj.api_key,
+                    api_secret=api_key_obj.secret_key,
+                    testnet=api_key_obj.is_testnet
+                )
+                try:
+                    base_asset = order.symbol.replace("USDC", "")  # Adatta se usi altri quote
+                    balance = float(client.get_asset_balance(asset=base_asset)['free'])
+                    symbol_info = client.get_symbol_info(order.symbol)
+                    filters = {f['filterType']: f for f in symbol_info['filters']}
+                    step_size = float(filters['LOT_SIZE']['stepSize'])
+
+                    # Se saldo troppo basso, marca come chiuso esternamente e non mandare ordine
+                    if balance < step_size:
+                        tlogger.warning(f"[SKIP CLOSE] order {order.id}: saldo {base_asset} troppo basso ({balance})")
+                        order.status = 'CLOSED_EXTERNALLY'
+                        order.closed_at = datetime.now(timezone.utc)
+                        session.commit()
+                        continue
+
+                    qty_to_close = min(float(order.quantity), balance)
+                    adapter.close_position_market(order.symbol, qty_to_close)
+                    order.status = 'CLOSED_SL'
+                    order.closed_at = datetime.now(timezone.utc)
+                    session.commit()
+                    tlogger.info(f"[STOP LOSS] order {order.id} chiuso SL")
+                    notify_close(order)
+                except Exception as e:
+                    tlogger.error(f"[ERROR] SL {order.id}: {e}")
+                    
+def sync_orders_with_binance():
+    with SessionLocal() as session:
+        executed_orders = session.query(Order).filter(Order.status == 'EXECUTED').all()
+        for order in executed_orders:
+            try:
+                client = get_binance_client(order.user_id)
+                base_asset = order.symbol.replace("USDC", "")  # Modifica se usi altri quote asset
+                balance = float(client.get_asset_balance(asset=base_asset)['free'])
+                if balance == 0:
+                    order.status = 'CLOSED_EXTERNALLY'
+                    order.closed_at = datetime.now(timezone.utc)
+                    session.commit()
+                    tlogger.info(f"[SYNC] order {order.id} chiuso esternamente")
+            except Exception as e:
+                tlogger.error(f"[ERROR] Sync {order.id}: {e}")

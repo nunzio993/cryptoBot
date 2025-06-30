@@ -425,11 +425,25 @@ def show_dashboard_tab(tab, user, adapters, session, cookies):
                                 st.session_state.executed_update_message = "❌ Adapter Binance non configurato"
                             else:
                                 try:
-                                    adapter.close_position_market(o.symbol, float(o.quantity))
-                                    o.status    = "CLOSED_MANUAL"
-                                    o.closed_at = datetime.datetime.now(datetime.timezone.utc)
-                                    session.commit()
-                                    st.session_state.executed_update_message = f"❌ Ordine {o.id} chiuso manualmente"
+                                    asset_name = o.symbol.replace("USDC", "")
+                                    balance = adapter.get_balance(asset_name)
+                                    client = adapter.client
+                                    symbol_info = client.get_symbol_info(o.symbol)
+                                    filters = {f['filterType']: f for f in symbol_info['filters']}
+                                    step_size = float(filters['LOT_SIZE']['stepSize'])
+
+                                    if balance < step_size:
+                                        o.status    = "CLOSED_EXTERNALLY"
+                                        o.closed_at = datetime.datetime.now(datetime.timezone.utc)
+                                        session.commit()
+                                        st.session_state.executed_update_message = f"❌ Saldo troppo basso per chiudere, ordine marcato come chiuso esternamente"
+                                    else:
+                                        qty_to_close = min(float(o.quantity), balance)
+                                        adapter.close_position_market(o.symbol, qty_to_close)
+                                        o.status    = "CLOSED_MANUAL"
+                                        o.closed_at = datetime.datetime.now(datetime.timezone.utc)
+                                        session.commit()
+                                        st.session_state.executed_update_message = f"❌ Ordine {o.id} chiuso manualmente"
                                 except Exception as e:
                                     st.session_state.executed_update_message = f"❌ Errore chiusura: {e}"
                             st.rerun()
