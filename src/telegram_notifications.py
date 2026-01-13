@@ -49,9 +49,12 @@ def broadcast(text, parse_mode=None):
         print(f"📤 invio a chat_id: {chat_id}")
         _send_message_sync(chat_id, text, parse_mode)
 
-def notify_open(order):
+def notify_open(order, exchange_name=None):
+    network = "Testnet 🧪" if getattr(order, 'is_testnet', False) else "Mainnet 🌐"
+    exchange = exchange_name.upper() if exchange_name else "N/A"
     msg = (
         "🟢 *Apertura ordine*\n"
+        f"Exchange: `{exchange}` ({network})\n"
         f"Simbolo: `{order.symbol}`\n"
         f"Quantità: {order.quantity}\n"
         f"Prezzo di entrata: {order.entry_price}\n"
@@ -59,8 +62,16 @@ def notify_open(order):
     for chat_id in get_user_chat_ids(order.user_id):
         _send_message_sync(chat_id, msg, parse_mode=ParseMode.MARKDOWN)
 
-def notify_close(order):
-    # ... costruisci msg come prima ...
+def notify_close(order, exchange_name=None):
+    network = "Testnet 🧪" if getattr(order, 'is_testnet', False) else "Mainnet 🌐"
+    exchange = exchange_name.upper() if exchange_name else "N/A"
+    msg = (
+        "🔴 *Chiusura ordine*\n"
+        f"Exchange: `{exchange}` ({network})\n"
+        f"Simbolo: `{order.symbol}`\n"
+        f"Quantità: {order.quantity}\n"
+        f"Status: {order.status}\n"
+    )
     for chat_id in get_user_chat_ids(order.user_id):
         _send_message_sync(chat_id, msg, parse_mode=ParseMode.MARKDOWN)
 

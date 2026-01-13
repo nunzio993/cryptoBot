@@ -16,7 +16,7 @@ services:
       - pgdata:/var/lib/postgresql/data
       - ./db-init:/docker-entrypoint-initdb.d
     ports:
-      - "5432:5432"
+      - "5433:5432"
 
   telegram_bot:
     build: .
@@ -26,7 +26,6 @@ services:
     depends_on:
       - db
     restart: always
-
 
   core:
     build:
@@ -50,10 +49,7 @@ services:
     container_name: binancebot-mainnet-dashboard
     restart: always
     command: >
-        streamlit run app.py
-        --server.port 8501
-        --server.address 0.0.0.0
-        --server.runOnSave=false
+      streamlit run app.py --server.port 8501 --server.address 0.0.0.0 --server.runOnSave=false
     ports:
       - "8502:8501"
     env_file:
@@ -64,5 +60,37 @@ services:
     volumes:
       - ./:/app
       - ./.streamlit:/root/.streamlit
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cryptobot-api
+    restart: always
+    command: python -m uvicorn api.main:app --host 0.0.0.0 --port 8001
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://${PG_USER}:${PG_PASSWORD}@db:5432/${PG_DB}
+    ports:
+      - "8001:8001"
+    depends_on:
+      - db
+    volumes:
+      - ./:/app
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: cryptobot-frontend
+    restart: always
+    environment:
+      - NEXT_PUBLIC_API_URL=http://api:8001/api
+    ports:
+      - "3001:3000"
+    depends_on:
+      - api
+
 volumes:
   pgdata:

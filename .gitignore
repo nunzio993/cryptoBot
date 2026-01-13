@@ -2,6 +2,10 @@
 .env
 *.env
 
+# Frontend - Node
+node_modules/
+.next/
+
 # Escludi database locali (sqlite)
 *.db
 
