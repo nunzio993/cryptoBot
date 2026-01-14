@@ -88,7 +88,7 @@ export default function DashboardPage() {
     const totalCryptoValue = portfolio?.positions_value || 0;
 
     // Calculate pending orders total value
-    const pendingTotalValue = pendingOrders.reduce((sum, o) => sum + (o.quantity * o.max_entry), 0);
+    const pendingTotalValue = pendingOrders.reduce((sum, o) => sum + (o.quantity * (o.max_entry || 0)), 0);
 
     return (
         <div className="space-y-8 animate-fadeIn">
@@ -288,7 +288,7 @@ function PositionCard({ position }: { position: Position }) {
 }
 
 function PendingOrderCard({ order }: { order: Order }) {
-    const totalValue = order.quantity * order.max_entry;
+    const totalValue = order.quantity * (order.max_entry || 0);
 
     return (
         <div className="p-4 rounded-xl border border-amber-500/20 bg-amber-500/5 transition-all hover:scale-[1.01]">
@@ -300,14 +300,14 @@ function PendingOrderCard({ order }: { order: Order }) {
                     <div>
                         <div className="font-semibold">{order.symbol}</div>
                         <div className="text-sm text-muted-foreground">
-                            {order.quantity} @ max {formatCurrency(order.max_entry)}
+                            {order.quantity} @ max {formatCurrency(order.max_entry || 0)}
                         </div>
                     </div>
                 </div>
 
                 <div className="text-right">
                     <div className="text-sm text-muted-foreground">
-                        Entry: {formatCurrency(order.entry_price)} - {formatCurrency(order.max_entry)}
+                        Entry: {formatCurrency(order.entry_price || 0)} - {formatCurrency(order.max_entry || 0)}
                     </div>
                     <div className="font-semibold text-amber-500">
                         ~{formatCurrency(totalValue)}
