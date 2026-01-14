@@ -301,7 +301,7 @@ def check_and_execute_stop_loss():
                     tlogger.error(f"[ERROR] SL {order.id}: {e}")
                     
 def sync_orders():
-    """Sync executed orders with exchanges - mark externally closed orders"""
+    """Sync executed orders with exchanges - mark externally closed orders and handle partial sells"""
     with SessionLocal() as session:
         executed_orders = session.query(Order).filter(Order.status.in_(['EXECUTED', 'PARTIAL_FILLED'])).all()
         for order in executed_orders:
@@ -311,14 +311,70 @@ def sync_orders():
             
             try:
                 adapter = get_exchange_adapter(order.user_id, exchange_name, is_testnet)
-                base_asset = order.symbol.replace("USDC", "")
+                base_asset = order.symbol.replace("USDC", "").replace("USDT", "")
                 balance = adapter.get_balance(base_asset)
+                order_qty = float(order.quantity) if order.quantity else 0
                 
                 if balance == 0:
+                    # Fully closed externally
                     order.status = 'CLOSED_EXTERNALLY'
                     order.closed_at = datetime.now(timezone.utc)
                     session.commit()
                     tlogger.info(f"[SYNC] order {order.id} chiuso esternamente su {exchange_name}")
+                    
+                elif balance < order_qty * 0.95:  # 5% tolerance for fees/rounding
+                    # Partially sold - update quantity and recreate TP/SL
+                    old_qty = order_qty
+                    new_qty = balance
+                    order.quantity = new_qty
+                    session.commit()
+                    tlogger.info(f"[SYNC] order {order.id} vendita parziale: {old_qty:.6f} -> {new_qty:.6f}")
+                    
+                    # Try to cancel old TP/SL orders on exchange and create new ones
+                    try:
+                        # Cancel existing orders for this symbol
+                        if hasattr(adapter, 'client'):
+                            open_orders = adapter.client.get_open_orders(symbol=order.symbol)
+                            for oo in open_orders:
+                                try:
+                                    adapter.client.cancel_order(symbol=order.symbol, orderId=oo['orderId'])
+                                    tlogger.info(f"[SYNC] Cancellato ordine {oo['orderId']} per {order.symbol}")
+                                except Exception as cancel_err:
+                                    tlogger.warning(f"[SYNC] Errore cancellazione ordine: {cancel_err}")
+                            
+                            # Get symbol info for formatting
+                            symbol_info = adapter.client.get_symbol_info(order.symbol)
+                            if symbol_info:
+                                filters = {f['filterType']: f for f in symbol_info['filters']}
+                                step_size = float(filters['LOT_SIZE']['stepSize'])
+                                tick_size = float(filters['PRICE_FILTER']['tickSize'])
+                                min_qty = float(filters['LOT_SIZE']['minQty'])
+                                
+                                # Format new quantity
+                                formatted_qty = round_step_size(new_qty, step_size)
+                                
+                                if formatted_qty >= min_qty:
+                                    # Recreate TP order if exists
+                                    if order.take_profit and float(order.take_profit) > 0:
+                                        tp_price = round_step_size(float(order.take_profit), tick_size)
+                                        try:
+                                            adapter.client.create_order(
+                                                symbol=order.symbol,
+                                                side='SELL',
+                                                type='LIMIT',
+                                                timeInForce='GTC',
+                                                quantity=str(formatted_qty),
+                                                price=str(tp_price)
+                                            )
+                                            tlogger.info(f"[SYNC] Ricreato TP per ordine {order.id}: qty={formatted_qty}, price={tp_price}")
+                                        except Exception as tp_err:
+                                            tlogger.warning(f"[SYNC] Errore creazione TP: {tp_err}")
+                                else:
+                                    tlogger.warning(f"[SYNC] Quantità {formatted_qty} sotto minimo {min_qty}, TP non ricreato")
+                                    
+                    except Exception as ex:
+                        tlogger.error(f"[SYNC] Errore aggiornamento TP/SL per ordine {order.id}: {ex}")
+                        
             except Exception as e:
                 tlogger.error(f"[ERROR] Sync {order.id} on {exchange_name}: {e}")
 

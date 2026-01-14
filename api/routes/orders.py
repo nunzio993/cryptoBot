@@ -134,6 +134,20 @@ async def get_portfolio(
         
         entry_price = float(order.executed_price or order.entry_price or 0)
         quantity = float(order.quantity or 0)
+        
+        # Check if quantity is below minimum sellable (skip dust positions)
+        try:
+            if hasattr(adapter, 'client'):
+                symbol_info = adapter.client.get_symbol_info(order.symbol)
+                if symbol_info:
+                    filters = {f['filterType']: f for f in symbol_info['filters']}
+                    min_qty = float(filters.get('LOT_SIZE', {}).get('minQty', 0))
+                    if quantity < min_qty:
+                        # Position too small to sell, skip it
+                        continue
+        except:
+            pass  # If we can't check, show it anyway
+        
         current_value = quantity * current_price
         pnl = current_value - (quantity * entry_price)
         pnl_percent = ((current_price - entry_price) / entry_price * 100) if entry_price > 0 else 0
@@ -261,6 +275,23 @@ async def get_holdings(
     holdings = []
     total_value = 0
     
+    # Get symbols already tracked by app orders (EXECUTED or PARTIAL_FILLED)
+    tracked_orders = db.query(Order).filter(
+        Order.user_id == current_user.id,
+        Order.exchange_id == key.exchange_id,
+        Order.is_testnet == key.is_testnet,
+        Order.status.in_(["EXECUTED", "PARTIAL_FILLED"])
+    ).all()
+    
+    # Extract tracked symbols (e.g., "BTCUSDC" -> "BTC")
+    tracked_assets = set()
+    for order in tracked_orders:
+        # Remove quote currencies to get base asset
+        asset = order.symbol
+        for quote in ['USDC', 'USDT', 'BTC', 'ETH', 'BNB']:
+            asset = asset.replace(quote, '')
+        tracked_assets.add(asset)
+    
     try:
         if hasattr(adapter, 'client'):
             all_tickers = adapter.client.get_all_tickers()
@@ -274,6 +305,10 @@ async def get_holdings(
                 quantity = float(balance['free']) + float(balance['locked'])
                 
                 if quantity <= 0.0001 or asset in stablecoins:
+                    continue
+                
+                # Skip assets already tracked by app orders
+                if asset in tracked_assets:
                     continue
                 
                 # Find price
@@ -386,11 +421,32 @@ async def create_order_from_holding(
     filters = {f['filterType']: f for f in symbol_info['filters']}
     step_size = float(filters['LOT_SIZE']['stepSize'])
     tick_size = float(filters['PRICE_FILTER']['tickSize'])
+    min_qty = float(filters['LOT_SIZE']['minQty'])
+    
+    # Check actual balance available
+    asset_name = order_data.symbol.replace("USDC", "").replace("USDT", "").replace("BTC", "").replace("ETH", "")
+    balance_info = adapter.get_balance(asset_name)
+    free_balance = float(balance_info) if balance_info else 0
+    
+    if free_balance < min_qty:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Insufficient {asset_name} balance. You have {free_balance:.8f} but need at least {min_qty}"
+        )
     
     # Format quantity and price
     from decimal import Decimal, ROUND_DOWN
-    qty = Decimal(str(order_data.quantity)).quantize(Decimal(str(step_size)), rounding=ROUND_DOWN)
+    
+    # Use the smaller of requested quantity or available balance
+    qty_to_use = min(order_data.quantity, free_balance)
+    qty = Decimal(str(qty_to_use)).quantize(Decimal(str(step_size)), rounding=ROUND_DOWN)
     tp_price = Decimal(str(order_data.take_profit)).quantize(Decimal(str(tick_size)), rounding=ROUND_DOWN)
+    
+    if float(qty) < min_qty:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Quantity {qty} is below minimum {min_qty}"
+        )
     
     # Place TP LIMIT order on exchange
     try:
@@ -722,6 +778,10 @@ async def cancel_order(
     order.closed_at = datetime.now(timezone.utc)
     db.commit()
     
+    # Broadcast WebSocket update
+    from api.websocket_manager import manager
+    await manager.broadcast_order_update(current_user.id, order_id, "CANCELLED")
+    
     return {"message": f"Order {order_id} cancelled"}
 
 
@@ -763,12 +823,13 @@ async def close_order(
         symbol_info = adapter.client.get_symbol_info(order.symbol)
         filters = {f['filterType']: f for f in symbol_info['filters']}
         step_size = float(filters['LOT_SIZE']['stepSize'])
+        min_qty = float(filters['LOT_SIZE']['minQty'])
         
-        if balance < step_size:
+        if balance < min_qty:
             order.status = "CLOSED_EXTERNALLY"
             order.closed_at = datetime.now(timezone.utc)
             db.commit()
-            return {"message": "Balance too low, marked as externally closed"}
+            return {"message": "Balance too low to sell, marked as closed"}
         
         qty_to_close = min(float(order.quantity), balance)
         adapter.close_position_market(order.symbol, qty_to_close)
@@ -776,6 +837,11 @@ async def close_order(
         order.status = "CLOSED_MANUAL"
         order.closed_at = datetime.now(timezone.utc)
         db.commit()
+        
+        # Broadcast WebSocket update
+        from api.websocket_manager import manager
+        await manager.broadcast_order_update(current_user.id, order_id, "CLOSED_MANUAL")
+        await manager.broadcast_portfolio_update(current_user.id)
         
         return {"message": f"Order {order_id} closed manually"}
     

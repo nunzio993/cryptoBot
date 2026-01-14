@@ -45,5 +45,5 @@ if __name__ == "__main__":
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("link", link))
     print("Bot avviato. Invia /link <codice> da Telegram per collegarti al sito.")
-    app.run_polling()
+    app.run_polling(drop_pending_updates=True)
 

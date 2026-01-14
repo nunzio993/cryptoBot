@@ -147,27 +147,150 @@ class BinanceAdapter(ExchangeAdapter):
 
 
 class BybitAdapter(ExchangeAdapter):
-    def __init__(self, api_key: str, secret_key: str):
-        self.client = ccxt.bybit({
+    """Bybit exchange adapter - spot trading"""
+    
+    def __init__(self, api_key: str, secret_key: str, testnet: bool = False):
+        config = {
             'apiKey': api_key,
-            'secret': secret_key
-        })
-
-    def get_balance(self, asset: str) -> float:
-        bal = self.client.fetch_balance()
-        return float(bal.get(asset, {}).get('free', 0.0))
-
-    def place_order(self, symbol: str, side: str, type_: str, quantity: float, price: float = None):
-        params = {
-            'symbol': symbol,
-            'type': type_.lower(),
-            'side': side.lower(),
-            'amount': quantity
+            'secret': secret_key,
+            'enableRateLimit': True,
+            'options': {
+                'defaultType': 'spot',
+            }
         }
-        if price is not None:
-            params['price'] = price
-        return self.client.create_order(**params)
-
+        
+        if testnet:
+            config['sandbox'] = True
+            # Bybit testnet URLs
+            config['urls'] = {
+                'api': {
+                    'public': 'https://api-testnet.bybit.com',
+                    'private': 'https://api-testnet.bybit.com',
+                }
+            }
+        
+        self.client = ccxt.bybit(config)
+        self.testnet = testnet
+    
+    def truncate(self, quantity: float, precision: int) -> float:
+        factor = 10 ** precision
+        return math.floor(quantity * factor) / factor
+    
+    def get_symbol_precision(self, symbol: str) -> int:
+        """Get quantity precision for a symbol"""
+        try:
+            markets = self.client.load_markets()
+            if symbol in markets:
+                return markets[symbol].get('precision', {}).get('amount', 8)
+            # Try with / format (BTC/USDC)
+            formatted = symbol.replace('USDC', '/USDC').replace('USDT', '/USDT')
+            if formatted in markets:
+                return markets[formatted].get('precision', {}).get('amount', 8)
+        except:
+            pass
+        return 8  # fallback
+    
+    def _format_symbol(self, symbol: str) -> str:
+        """Convert BTCUSDC to BTC/USDC format for ccxt"""
+        for quote in ['USDC', 'USDT']:
+            if symbol.endswith(quote):
+                base = symbol[:-len(quote)]
+                return f"{base}/{quote}"
+        return symbol
+    
+    def get_balance(self, asset: str) -> float:
+        try:
+            bal = self.client.fetch_balance()
+            if asset in bal:
+                return float(bal[asset].get('free', 0.0))
+            return 0.0
+        except Exception as e:
+            print(f"Bybit get_balance error: {e}")
+            return 0.0
+    
+    def get_symbol_price(self, symbol: str) -> float:
+        """Get current price for a symbol"""
+        try:
+            formatted = self._format_symbol(symbol)
+            ticker = self.client.fetch_ticker(formatted)
+            return float(ticker.get('last', 0))
+        except Exception as e:
+            print(f"Bybit get_symbol_price error: {e}")
+            return 0.0
+    
+    def place_order(self, symbol: str, side: str, type_: str, quantity: float, price: float = None):
+        formatted = self._format_symbol(symbol)
+        order_type = type_.lower()
+        order_side = side.lower()
+        
+        if order_type == 'market':
+            return self.client.create_market_order(formatted, order_side, quantity)
+        else:
+            return self.client.create_limit_order(formatted, order_side, quantity, price)
+    
     def cancel_order(self, symbol: str, order_id):
-        return self.client.cancel_order(symbol=symbol, id=order_id)
-
+        formatted = self._format_symbol(symbol)
+        return self.client.cancel_order(order_id, formatted)
+    
+    def close_position_market(self, symbol: str, quantity: float):
+        """Close a spot position by selling at market"""
+        try:
+            precision = self.get_symbol_precision(symbol)
+            truncated_qty = self.truncate(float(quantity) * 0.999, precision)
+            formatted = self._format_symbol(symbol)
+            
+            order = self.client.create_market_order(
+                formatted,
+                'sell',
+                truncated_qty
+            )
+            return order
+        except Exception as e:
+            print(f"Bybit close_position_market error: {e}")
+            raise
+    
+    def update_spot_tp_sl(self, symbol: str, quantity: float, new_tp: float, new_sl: float, user_id: int = None):
+        """Update TP/SL for a spot position"""
+        with SessionLocal() as session:
+            try:
+                formatted = self._format_symbol(symbol)
+                
+                # Cancel existing open orders for this symbol
+                open_orders = self.client.fetch_open_orders(formatted)
+                for order in open_orders:
+                    if order['side'] == 'sell':
+                        try:
+                            self.client.cancel_order(order['id'], formatted)
+                        except:
+                            pass
+                
+                # Place new TP limit order
+                precision = self.get_symbol_precision(symbol)
+                truncated_qty = self.truncate(float(quantity), precision)
+                
+                self.client.create_limit_order(
+                    formatted,
+                    'sell',
+                    truncated_qty,
+                    new_tp
+                )
+                
+                # Update order in database
+                order_query = session.query(Order).filter(
+                    Order.symbol == symbol,
+                    Order.quantity == quantity,
+                    Order.status == "EXECUTED"
+                )
+                if user_id:
+                    order_query = order_query.filter(Order.user_id == user_id)
+                order = order_query.order_by(Order.executed_at.desc()).first()
+                
+                if order:
+                    order.take_profit = new_tp
+                    order.stop_loss = new_sl
+                    session.commit()
+                
+                return True
+            except Exception as e:
+                print(f"Bybit update_spot_tp_sl error: {e}")
+                raise
