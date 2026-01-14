@@ -62,14 +62,14 @@ export default function OrdersPage() {
     const { data: pendingOrders = [], isLoading: pendingLoading } = useQuery({
         queryKey: ["orders", "PENDING", selectedKeyId],
         queryFn: () => ordersApi.list("PENDING", networkMode, selectedKeyId || undefined).then((res) => res.data),
-        refetchInterval: 10000,
+        refetchInterval: 5000, // 5 seconds for faster updates
         enabled: !!selectedKeyId,
     });
 
     const { data: executedOrders = [], isLoading: executedLoading } = useQuery({
         queryKey: ["orders", "EXECUTED", selectedKeyId],
         queryFn: () => ordersApi.list("EXECUTED", networkMode, selectedKeyId || undefined).then((res) => res.data),
-        refetchInterval: 10000,
+        refetchInterval: 5000, // 5 seconds for faster updates
         enabled: !!selectedKeyId,
     });
 
@@ -85,6 +85,7 @@ export default function OrdersPage() {
             ordersApi.update(id, data, networkMode),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["orders"] });
+            queryClient.invalidateQueries({ queryKey: ["portfolio"] });
         },
     });
 
@@ -92,6 +93,7 @@ export default function OrdersPage() {
         mutationFn: (id: number) => ordersApi.cancel(id),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["orders"] });
+            queryClient.invalidateQueries({ queryKey: ["portfolio"] });
         },
     });
 
@@ -99,6 +101,7 @@ export default function OrdersPage() {
         mutationFn: (id: number) => ordersApi.close(id, networkMode),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["orders"] });
+            queryClient.invalidateQueries({ queryKey: ["portfolio"] });
         },
     });
 
@@ -166,6 +169,7 @@ export default function OrdersPage() {
             {showNewOrder && selectedKey && (
                 <NewOrderForm
                     networkMode={networkMode}
+                    apiKeyId={selectedKey.id}
                     onSuccess={() => {
                         setShowNewOrder(false);
                         queryClient.invalidateQueries({ queryKey: ["orders"] });

@@ -12,7 +12,7 @@ from slowapi.errors import RateLimitExceeded
 
 load_dotenv()
 
-from api.routes import auth, orders, exchange, apikeys, profile, logs, telegram
+from api.routes import auth, orders, exchange, apikeys, profile, logs, telegram, ws
 
 # Rate limiter configuration
 limiter = Limiter(key_func=get_remote_address)
@@ -60,6 +60,7 @@ app.include_router(apikeys.router, prefix="/api/apikeys", tags=["API Keys"])
 app.include_router(profile.router, prefix="/api/profile", tags=["Profile"])
 app.include_router(logs.router, prefix="/api/logs", tags=["Logs"])
 app.include_router(telegram.router, prefix="/api/telegram", tags=["Telegram"])
+app.include_router(ws.router, prefix="", tags=["WebSocket"])  # No prefix for WS
 
 
 @app.get("/api/health")

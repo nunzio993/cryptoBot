@@ -126,8 +126,8 @@ export const ordersApi = {
         stop_loss: number;
         entry_interval: string;
         stop_interval: string;
-    }, networkMode: string = "Testnet", exchangeName: string = "binance") =>
-        api.post<Order>("/orders", data, { params: { network_mode: networkMode, exchange_name: exchangeName } }),
+    }, networkMode: string = "Testnet") =>
+        api.post<Order>("/orders", data, { params: { network_mode: networkMode } }),
 
     createFromHolding: (data: {
         symbol: string;

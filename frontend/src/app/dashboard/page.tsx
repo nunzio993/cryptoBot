@@ -67,7 +67,7 @@ export default function DashboardPage() {
     const { data: portfolio, isLoading } = useQuery({
         queryKey: ["portfolio", selectedKeyId],
         queryFn: () => ordersApi.portfolio(selectedKeyId || undefined, networkMode).then((res) => res.data),
-        refetchInterval: 15000,
+        refetchInterval: 5000, // 5 seconds for faster updates
         enabled: !!selectedKeyId,
     });
 
@@ -75,7 +75,7 @@ export default function DashboardPage() {
     const { data: pendingOrders = [] } = useQuery({
         queryKey: ["orders", "PENDING", selectedKeyId],
         queryFn: () => ordersApi.list("PENDING", networkMode, selectedKeyId || undefined).then((res) => res.data),
-        refetchInterval: 15000,
+        refetchInterval: 5000, // 5 seconds for faster updates
         enabled: !!selectedKeyId,
     });
 
@@ -229,14 +229,17 @@ export default function DashboardPage() {
 
 function PositionCard({ position }: { position: Position }) {
     const isProfit = position.pnl >= 0;
+    const router = require("next/navigation").useRouter();
 
     return (
-        <div className={cn(
-            "p-4 rounded-xl border transition-all hover:scale-[1.01]",
-            isProfit
-                ? "bg-green-500/5 border-green-500/20"
-                : "bg-red-500/5 border-red-500/20"
-        )}>
+        <div
+            onClick={() => router.push("/dashboard/orders")}
+            className={cn(
+                "p-4 rounded-xl border transition-all hover:scale-[1.01] cursor-pointer",
+                isProfit
+                    ? "bg-green-500/5 border-green-500/20 hover:border-green-500/40"
+                    : "bg-red-500/5 border-red-500/20 hover:border-red-500/40"
+            )}>
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
                     <div className={cn(

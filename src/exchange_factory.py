@@ -37,8 +37,7 @@ class ExchangeFactory:
         if exchange_name == "binance":
             return BinanceAdapter(api_key, api_secret, testnet=testnet)
         elif exchange_name == "bybit":
-            # Bybit adapter - TODO: aggiungere supporto testnet
-            return BybitAdapter(api_key, api_secret)
+            return BybitAdapter(api_key, api_secret, testnet=testnet)
         else:
             raise ValueError(
                 f"Exchange '{exchange_name}' not supported. "

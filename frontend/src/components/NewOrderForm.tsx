@@ -8,17 +8,13 @@ import { Loader2, TrendingUp, AlertTriangle, DollarSign } from "lucide-react";
 
 interface NewOrderFormProps {
     networkMode: "Testnet" | "Mainnet";
+    apiKeyId?: number;
     onSuccess: () => void;
 }
 
 const INTERVALS = ["Market", "M5", "H1", "H4", "Daily"];
-const EXCHANGES = [
-    { id: "binance", name: "Binance", icon: "🟡" },
-    { id: "bybit", name: "Bybit", icon: "🟠" },
-];
 
-export function NewOrderForm({ networkMode, onSuccess }: NewOrderFormProps) {
-    const [selectedExchange, setSelectedExchange] = useState("binance");
+export function NewOrderForm({ networkMode, apiKeyId, onSuccess }: NewOrderFormProps) {
     const [formData, setFormData] = useState({
         symbol: "",
         quantity: "",
@@ -38,6 +34,13 @@ export function NewOrderForm({ networkMode, onSuccess }: NewOrderFormProps) {
         queryFn: () => exchangeApi.symbols("USDC").then((res) => res.data),
     });
 
+    // Fetch portfolio for USDC balance
+    const { data: portfolio } = useQuery({
+        queryKey: ["portfolio", apiKeyId, networkMode],
+        queryFn: () => ordersApi.portfolio(apiKeyId, networkMode).then((res) => res.data),
+        enabled: !!apiKeyId,
+    });
+
     // Create order mutation
     const createMutation = useMutation({
         mutationFn: (data: {
@@ -49,7 +52,7 @@ export function NewOrderForm({ networkMode, onSuccess }: NewOrderFormProps) {
             stop_loss: number;
             entry_interval: string;
             stop_interval: string;
-        }) => ordersApi.create(data, networkMode, selectedExchange),
+        }) => ordersApi.create(data, networkMode),
         onSuccess: () => {
             setError("");
             onSuccess();
@@ -130,34 +133,25 @@ export function NewOrderForm({ networkMode, onSuccess }: NewOrderFormProps) {
 
     return (
         <div className="bg-card rounded-2xl border border-border p-6 animate-fadeIn">
-            <div className="flex items-center gap-3 mb-6">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center">
-                    <TrendingUp className="w-5 h-5 text-white" />
+            <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-r from-blue-500 to-purple-500 flex items-center justify-center">
+                        <TrendingUp className="w-5 h-5 text-white" />
+                    </div>
+                    <h2 className="text-xl font-semibold">New Trade</h2>
                 </div>
-                <h2 className="text-xl font-semibold">New Trade</h2>
+                {portfolio && (
+                    <div className="flex items-center gap-2 px-4 py-2 bg-muted rounded-xl">
+                        <DollarSign className="w-4 h-4 text-green-500" />
+                        <span className="text-sm text-muted-foreground">Available:</span>
+                        <span className="font-semibold text-green-500">
+                            {formatCurrency(portfolio.usdc_available)} USDC
+                        </span>
+                    </div>
+                )}
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-6">
-                {/* Exchange Selection */}
-                <div className="flex gap-2 mb-4">
-                    {EXCHANGES.map((ex) => (
-                        <button
-                            key={ex.id}
-                            type="button"
-                            onClick={() => setSelectedExchange(ex.id)}
-                            className={cn(
-                                "flex items-center gap-2 px-4 py-2 rounded-xl border transition-all",
-                                selectedExchange === ex.id
-                                    ? "bg-primary text-primary-foreground border-primary"
-                                    : "bg-muted border-border hover:border-primary/50"
-                            )}
-                        >
-                            <span>{ex.icon}</span>
-                            <span>{ex.name}</span>
-                        </button>
-                    ))}
-                </div>
-
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                     {/* Symbol */}
                     <div>

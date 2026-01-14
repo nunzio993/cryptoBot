@@ -5,6 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { Sidebar } from "@/components/Sidebar";
 import { Loader2 } from "lucide-react";
+import { useWebSocket } from "@/hooks/useWebSocket";
 
 export default function DashboardLayout({
     children,
@@ -14,6 +15,9 @@ export default function DashboardLayout({
     const { user, isLoading } = useAuth();
     const router = useRouter();
     const pathname = usePathname();
+
+    // Activate WebSocket connection for real-time updates
+    useWebSocket();
 
     useEffect(() => {
         if (!isLoading && !user) {

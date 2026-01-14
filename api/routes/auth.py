@@ -112,8 +112,10 @@ async def login(request: Request, login_data: LoginRequest, db=Depends(get_db)):
     If 2FA is enabled, returns requires_2fa=True and user must call /login/2fa
     """
     from api.services.audit_service import log_login_attempt, log_audit, AuditAction
+    from sqlalchemy import func
     
-    user = db.query(User).filter(User.username == login_data.username).first()
+    # Case-insensitive username lookup
+    user = db.query(User).filter(func.lower(User.username) == login_data.username.lower()).first()
     
     if not user:
         log_login_attempt(login_data.username, request, False, reason="user_not_found")
@@ -162,8 +164,10 @@ async def login_with_2fa(request: Request, login_data: TwoFactorLoginRequest, db
     """
     from api.services.audit_service import log_login_attempt, log_audit, AuditAction
     from api.services.two_factor_service import verify_totp, decrypt_totp_secret, verify_backup_code
+    from sqlalchemy import func
     
-    user = db.query(User).filter(User.username == login_data.username).first()
+    # Case-insensitive username lookup
+    user = db.query(User).filter(func.lower(User.username) == login_data.username.lower()).first()
     
     if not user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
