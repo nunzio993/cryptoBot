@@ -26,9 +26,23 @@ with SessionLocal() as session:
         'H4':    '4h',
         'Daily': '1d',
     }
+    
+    # Durata in secondi per ogni intervallo
+    INTERVAL_SECONDS = {
+        'M5':    5 * 60,
+        'H1':    60 * 60,
+        'H4':    4 * 60 * 60,
+        'Daily': 24 * 60 * 60,
+    }
 
 tlogger = logging.getLogger('core')
 tlogger.setLevel(logging.INFO)
+
+def get_candle_close_time(candle_open_ts: datetime, interval: str) -> datetime:
+    """Calcola il timestamp di CHIUSURA della candela"""
+    from datetime import timedelta
+    seconds = INTERVAL_SECONDS.get(interval, 5 * 60)
+    return candle_open_ts + timedelta(seconds=seconds)
 
 def fetch_last_closed_candle(symbol: str, interval: str, client: Client):
     api_interval = INTERVAL_MAP.get(interval, interval)
@@ -117,14 +131,15 @@ def auto_execute_pending():
 
             candle = fetch_last_closed_candle(order.symbol, order.entry_interval, client)
             ts_candle = datetime.fromtimestamp(candle[0] / 1000, tz=timezone.utc)
+            candle_close_time = get_candle_close_time(ts_candle, order.entry_interval)
             last_close = float(candle[4])
 
-            tlogger.info(f"[DEBUG] order={order.id} | created={created_dt} | ts_candle={ts_candle} | entry={order.entry_price} | last_close={last_close}")
+            tlogger.info(f"[DEBUG] order={order.id} | created={created_dt} | candle_open={ts_candle} | candle_close={candle_close_time} | entry={order.entry_price} | last_close={last_close}")
 
             if (
                 order.entry_price <= last_close <= order.max_entry and
-                ts_candle > created_dt and                  # candela successiva alla creazione
-                (not order.executed_at)                     # esegui solo se mai eseguito
+                candle_close_time >= created_dt and             # candela che CHIUDE dopo/durante la creazione
+                (not order.executed_at)                         # esegui solo se mai eseguito
             ):
                 exchange = session.query(Exchange).filter_by(name="binance").first()
                 api_key_obj = session.query(APIKey).filter_by(
@@ -249,12 +264,13 @@ def check_and_execute_stop_loss():
             candle = fetch_last_closed_candle(order.symbol, interval, client)
             last_close = float(candle[4])
             ts_candle = datetime.fromtimestamp(candle[0] / 1000, tz=timezone.utc)
+            candle_close_time = get_candle_close_time(ts_candle, interval)
 
-            # PATCH: chiusura candela <= stop_loss e candela successiva all'apertura
+            # Check: chiusura candela <= stop_loss e candela che CHIUDE dopo l'esecuzione
             if (
                 order.stop_loss is not None and
                 last_close <= float(order.stop_loss) and
-                ts_candle > order.executed_at
+                candle_close_time >= order.executed_at
             ):
                 exchange = session.query(Exchange).filter_by(name="binance").first()
                 api_key_obj = session.query(APIKey).filter_by(
