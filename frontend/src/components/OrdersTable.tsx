@@ -25,8 +25,10 @@ export function OrdersTable({
     const [editingId, setEditingId] = useState<number | null>(null);
     const [editValues, setEditValues] = useState<Partial<Order>>({});
     const [saving, setSaving] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
     const startEdit = (order: Order) => {
+        setError(null);
         setEditingId(order.id);
         setEditValues({
             entry_price: order.entry_price,
@@ -39,16 +41,21 @@ export function OrdersTable({
     const cancelEdit = () => {
         setEditingId(null);
         setEditValues({});
+        setError(null);
     };
 
     const saveEdit = async (id: number) => {
         if (!onUpdate) return;
         setSaving(true);
+        setError(null);
         try {
             await onUpdate(id, editValues);
             setEditingId(null);
             setEditValues({});
-        } catch (e) {
+        } catch (e: any) {
+            // Extract error message from API response
+            const errorMsg = e?.response?.data?.detail || e?.message || "Failed to update order";
+            setError(errorMsg);
             console.error(e);
         } finally {
             setSaving(false);
@@ -73,6 +80,17 @@ export function OrdersTable({
 
     return (
         <div className="overflow-x-auto">
+            {error && (
+                <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-500 text-sm flex items-center justify-between">
+                    <span>{error}</span>
+                    <button
+                        onClick={() => setError(null)}
+                        className="p-1 hover:bg-red-500/20 rounded"
+                    >
+                        <X className="w-4 h-4" />
+                    </button>
+                </div>
+            )}
             <table className="w-full">
                 <thead>
                     <tr className="border-b border-border">
