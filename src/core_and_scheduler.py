@@ -320,6 +320,58 @@ def check_and_execute_stop_loss():
                     notify_close(order, exchange_name=exchange_name)
                 except Exception as e:
                     tlogger.error(f"[ERROR] SL {order.id}: {e}")
+
+def check_tp_fills():
+    """Check if TP orders have been filled and update order status accordingly"""
+    with SessionLocal() as session:
+        executed_orders = session.query(Order).filter(Order.status.in_(['EXECUTED', 'PARTIAL_FILLED'])).all()
+        
+        for order in executed_orders:
+            is_testnet = getattr(order, 'is_testnet', False) or False
+            exchange_name = get_order_exchange_name(order, session)
+            
+            try:
+                adapter = get_exchange_adapter(order.user_id, exchange_name, is_testnet)
+                
+                # Check if there are any open SELL orders for this symbol
+                open_orders = adapter.client.get_open_orders(symbol=order.symbol)
+                has_tp_order = any(o['side'] == 'SELL' for o in open_orders)
+                
+                if not has_tp_order:
+                    # No TP order exists - check if balance shows position was sold
+                    base_asset = order.symbol.replace("USDC", "").replace("USDT", "")
+                    bal = adapter.client.get_asset_balance(asset=base_asset)
+                    free_balance = float(bal.get('free', 0)) if bal else 0
+                    locked_balance = float(bal.get('locked', 0)) if bal else 0
+                    total_balance = free_balance + locked_balance
+                    order_qty = float(order.quantity) if order.quantity else 0
+                    
+                    # If balance is significantly lower than order qty and no TP order exists,
+                    # the TP might have been filled
+                    if total_balance < order_qty * 0.5:  # Threshold: if less than 50% remains
+                        # Check recent trades to confirm TP fill
+                        try:
+                            trades = adapter.client.get_my_trades(symbol=order.symbol, limit=5)
+                            for trade in trades:
+                                if not trade.get('isBuyer', True):  # SELL trade
+                                    trade_qty = float(trade.get('qty', 0))
+                                    trade_price = float(trade.get('price', 0))
+                                    tp_price = float(order.take_profit) if order.take_profit else 0
+                                    
+                                    # If trade price is near TP and quantity matches
+                                    if trade_qty >= order_qty * 0.9 and abs(trade_price - tp_price) / tp_price < 0.02:
+                                        order.status = 'CLOSED_TP'
+                                        order.closed_at = datetime.now(timezone.utc)
+                                        session.commit()
+                                        tlogger.info(f"[TP CHECK] order {order.id} TP fillato @ {trade_price}")
+                                        notify_close(order, exchange_name=exchange_name)
+                                        break
+                        except:
+                            pass
+                            
+            except Exception as e:
+                tlogger.error(f"[ERROR] TP check {order.id}: {e}")
+                    
                     
 def sync_orders():
     """Sync executed orders with exchanges - mark externally closed orders and handle partial sells"""

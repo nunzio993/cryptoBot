@@ -3,7 +3,7 @@ import sys
 import logging
 import pytz
 from apscheduler.schedulers.blocking import BlockingScheduler
-from src.core_and_scheduler import auto_execute_pending, check_and_execute_stop_loss, sync_orders
+from src.core_and_scheduler import auto_execute_pending, check_and_execute_stop_loss, sync_orders, check_tp_fills
 
 # Root logger
 root = logging.getLogger()
@@ -14,6 +14,7 @@ root.setLevel(logging.INFO)
 def scheduled_job():
     auto_execute_pending()
     check_and_execute_stop_loss()
+    check_tp_fills()
     sync_orders()
 
 # StreamHandler → stdout
