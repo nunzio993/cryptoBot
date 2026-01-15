@@ -754,6 +754,29 @@ async def update_order(
             decrypted_key = decrypt_api_key(key.api_key, current_user.id)
             decrypted_secret = decrypt_api_key(key.secret_key, current_user.id)
             adapter = BinanceAdapter(decrypted_key, decrypted_secret, testnet=(network_mode == "Testnet"))
+            
+            # Validate TP > current price (for LONG positions)
+            try:
+                current_price = float(adapter.client.get_symbol_ticker(symbol=order.symbol)['price'])
+                new_tp = float(order.take_profit)
+                new_sl = float(order.stop_loss)
+                
+                if new_tp <= current_price:
+                    raise HTTPException(
+                        status_code=400, 
+                        detail=f"Take Profit ({new_tp}) must be greater than current price ({current_price:.2f})"
+                    )
+                
+                if new_sl >= current_price:
+                    raise HTTPException(
+                        status_code=400, 
+                        detail=f"Stop Loss ({new_sl}) must be less than current price ({current_price:.2f})"
+                    )
+            except HTTPException:
+                raise
+            except Exception:
+                pass  # If price check fails, allow the update
+            
             try:
                 adapter.update_spot_tp_sl(
                     order.symbol,
