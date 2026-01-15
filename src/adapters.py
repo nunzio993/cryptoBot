@@ -89,8 +89,13 @@ class BinanceAdapter(ExchangeAdapter):
             return Client(api_key_entry.api_key, api_key_entry.secret_key)
 
     def get_balance(self, asset: str) -> float:
+        """Get total balance (free + locked) for an asset"""
         bal = self.client.get_asset_balance(asset=asset)
-        return float(bal['free']) if bal and 'free' in bal else 0.0
+        if bal:
+            free = float(bal.get('free', 0))
+            locked = float(bal.get('locked', 0))
+            return free + locked
+        return 0.0
 
     def place_order(self, symbol: str, side: str, type_: str, quantity: float, price: float = None):
         params = {
