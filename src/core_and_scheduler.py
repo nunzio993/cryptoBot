@@ -336,6 +336,9 @@ def sync_orders():
                 balance = adapter.get_balance(base_asset)
                 order_qty = float(order.quantity) if order.quantity else 0
                 
+                network_name = "Testnet" if is_testnet else "Mainnet"
+                tlogger.info(f"[SYNC DEBUG] order {order.id} | {exchange_name} {network_name} | asset={base_asset} | balance={balance} | order_qty={order_qty}")
+                
                 # Get minimum quantity for the symbol
                 min_qty = 0.0
                 try:
@@ -347,8 +350,13 @@ def sync_orders():
                 except:
                     pass  # Use default 0
                 
-                if balance == 0 or (balance > 0 and balance < min_qty):
-                    # Fully closed externally or below minimum
+                # Only close if balance is truly 0 AND order was executed some time ago (not just now)
+                order_age_minutes = 0
+                if order.executed_at:
+                    order_age_minutes = (datetime.now(timezone.utc) - order.executed_at).total_seconds() / 60
+                
+                if (balance == 0 or (balance > 0 and balance < min_qty)) and order_age_minutes > 5:
+                    # Fully closed externally or below minimum (only if order is older than 5 min)
                     order.status = 'CLOSED_EXTERNALLY'
                     order.closed_at = datetime.now(timezone.utc)
                     session.commit()
