@@ -336,12 +336,26 @@ def sync_orders():
                 balance = adapter.get_balance(base_asset)
                 order_qty = float(order.quantity) if order.quantity else 0
                 
-                if balance == 0:
-                    # Fully closed externally
+                # Get minimum quantity for the symbol
+                min_qty = 0.0
+                try:
+                    if hasattr(adapter, 'client'):
+                        symbol_info = adapter.client.get_symbol_info(order.symbol)
+                        if symbol_info:
+                            filters = {f['filterType']: f for f in symbol_info['filters']}
+                            min_qty = float(filters['LOT_SIZE']['minQty'])
+                except:
+                    pass  # Use default 0
+                
+                if balance == 0 or (balance > 0 and balance < min_qty):
+                    # Fully closed externally or below minimum
                     order.status = 'CLOSED_EXTERNALLY'
                     order.closed_at = datetime.now(timezone.utc)
                     session.commit()
-                    tlogger.info(f"[SYNC] order {order.id} chiuso esternamente su {exchange_name}")
+                    if balance > 0:
+                        tlogger.info(f"[SYNC] order {order.id} quantità {balance} sotto minimo {min_qty}, chiuso automaticamente")
+                    else:
+                        tlogger.info(f"[SYNC] order {order.id} chiuso esternamente su {exchange_name}")
                     
                 elif balance < order_qty * 0.95:  # 5% tolerance for fees/rounding
                     # Partially sold - update quantity and recreate TP/SL
@@ -391,7 +405,11 @@ def sync_orders():
                                         except Exception as tp_err:
                                             tlogger.warning(f"[SYNC] Errore creazione TP: {tp_err}")
                                 else:
-                                    tlogger.warning(f"[SYNC] Quantità {formatted_qty} sotto minimo {min_qty}, TP non ricreato")
+                                    # Quantity below minimum - mark as closed
+                                    tlogger.info(f"[SYNC] order {order.id} quantità {formatted_qty} sotto minimo {min_qty}, chiuso automaticamente")
+                                    order.status = 'CLOSED_EXTERNALLY'
+                                    order.closed_at = datetime.now(timezone.utc)
+                                    session.commit()
                                     
                     except Exception as ex:
                         tlogger.error(f"[SYNC] Errore aggiornamento TP/SL per ordine {order.id}: {ex}")
