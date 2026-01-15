@@ -141,21 +141,26 @@ def auto_execute_pending():
                 candle_close_time >= created_dt and             # candela che CHIUDE dopo/durante la creazione
                 (not order.executed_at)                         # esegui solo se mai eseguito
             ):
-                exchange = session.query(Exchange).filter_by(name="binance").first()
+                exchange = session.query(Exchange).filter_by(name=exchange_name).first()
                 api_key_obj = session.query(APIKey).filter_by(
                     user_id=order.user_id,
                     exchange_id=exchange.id,
-                    is_testnet=False
+                    is_testnet=is_testnet  # Use order's testnet setting
                 ).first()
 
                 if not api_key_obj:
-                    tlogger.warning(f"[WARNING] Nessuna APIKey trovata per user {order.user_id}")
+                    tlogger.warning(f"[WARNING] Nessuna APIKey {network_name} trovata per user {order.user_id} su {exchange_name}")
                     continue
 
+                # Decrypt API keys
+                from src.crypto_utils import decrypt_api_key
+                decrypted_key = decrypt_api_key(api_key_obj.api_key, order.user_id)
+                decrypted_secret = decrypt_api_key(api_key_obj.secret_key, order.user_id)
+
                 adapter = BinanceAdapter(
-                    api_key=api_key_obj.api_key,
-                    api_secret=api_key_obj.secret_key,
-                    testnet=api_key_obj.is_testnet
+                    api_key=decrypted_key,
+                    api_secret=decrypted_secret,
+                    testnet=is_testnet
                 )
 
                 try:
