@@ -178,20 +178,36 @@ class OrderService:
             adapter = ExchangeService.get_adapter(user_id, exchange_name, is_testnet)
             
             try:
-                asset_name = order.symbol.replace("USDC", "")
-                balance = adapter.get_balance(asset_name)
+                # First cancel any open TP/SL orders for this symbol to unlock tokens
+                try:
+                    open_orders = adapter.client.get_open_orders(symbol=order.symbol)
+                    for oo in open_orders:
+                        if oo['side'] == 'SELL':  # TP orders are SELL
+                            try:
+                                adapter.client.cancel_order(symbol=order.symbol, orderId=oo['orderId'])
+                            except:
+                                pass
+                except:
+                    pass
+                
+                # Now get the unlocked balance
+                asset_name = order.symbol.replace("USDC", "").replace("USDT", "")
+                
+                # Get free balance only (after canceling TP)
+                bal = adapter.client.get_asset_balance(asset=asset_name)
+                free_balance = float(bal.get('free', 0)) if bal else 0
                 
                 symbol_info = adapter.client.get_symbol_info(order.symbol)
                 filters = {f['filterType']: f for f in symbol_info['filters']}
                 step_size = float(filters['LOT_SIZE']['stepSize'])
                 
-                if balance < step_size:
+                if free_balance < step_size:
                     order.status = "CLOSED_EXTERNALLY"
                     order.closed_at = datetime.now(timezone.utc)
                     session.commit()
                     return {"message": "Balance too low, marked as externally closed"}
                 
-                qty_to_close = min(float(order.quantity), balance)
+                qty_to_close = min(float(order.quantity), free_balance)
                 adapter.close_position_market(order.symbol, qty_to_close)
                 
                 order.status = "CLOSED_MANUAL"
