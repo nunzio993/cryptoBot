@@ -283,14 +283,19 @@ async def get_holdings(
         Order.status.in_(["EXECUTED", "PARTIAL_FILLED"])
     ).all()
     
-    # Extract tracked symbols (e.g., "BTCUSDC" -> "BTC")
-    tracked_assets = set()
+    # Build a map of tracked quantities per asset
+    tracked_quantities = {}
     for order in tracked_orders:
         # Remove quote currencies to get base asset
-        asset = order.symbol
-        for quote in ['USDC', 'USDT', 'BTC', 'ETH', 'BNB']:
-            asset = asset.replace(quote, '')
-        tracked_assets.add(asset)
+        base_asset = order.symbol
+        for quote in ['USDC', 'USDT']:
+            if base_asset.endswith(quote):
+                base_asset = base_asset[:-len(quote)]
+                break
+        
+        if base_asset not in tracked_quantities:
+            tracked_quantities[base_asset] = 0
+        tracked_quantities[base_asset] += float(order.quantity) if order.quantity else 0
     
     try:
         if hasattr(adapter, 'client'):
@@ -307,8 +312,12 @@ async def get_holdings(
                 if quantity <= 0.0001 or asset in stablecoins:
                     continue
                 
-                # Skip assets already tracked by app orders
-                if asset in tracked_assets:
+                # Subtract quantity already tracked by app orders
+                tracked_qty = tracked_quantities.get(asset, 0)
+                external_qty = quantity - tracked_qty
+                
+                # Skip if no external quantity remains
+                if external_qty <= 0.0001:
                     continue
                 
                 # Find price
@@ -327,7 +336,7 @@ async def get_holdings(
                 else:
                     continue
                 
-                current_value = quantity * current_price
+                current_value = external_qty * current_price
                 total_value += current_value
                 
                 # Estimate avg price (we don't know actual entry, use current as placeholder)
@@ -338,7 +347,7 @@ async def get_holdings(
                 holdings.append(HoldingInfo(
                     asset=asset,
                     symbol=symbol,
-                    quantity=quantity,
+                    quantity=external_qty,
                     avg_price=avg_price,
                     current_price=current_price,
                     current_value=current_value,
