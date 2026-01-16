@@ -10,9 +10,15 @@ from api.deps import get_current_user
 
 router = APIRouter()
 
-# Use path relative to project root (parent of api/)
-PROJECT_ROOT = Path(__file__).parent.parent.parent
-LOG_PATH = PROJECT_ROOT / "logs" / "scheduler.log"
+# Use absolute path that matches Docker volume mount
+# Volume is ./:/app, so logs are at /app/logs/scheduler.log
+import os
+if os.path.exists("/app/logs"):
+    LOG_PATH = Path("/app/logs/scheduler.log")
+else:
+    # Fallback for local development
+    PROJECT_ROOT = Path(__file__).parent.parent.parent
+    LOG_PATH = PROJECT_ROOT / "logs" / "scheduler.log"
 
 
 @router.get("", response_model=List[str])
