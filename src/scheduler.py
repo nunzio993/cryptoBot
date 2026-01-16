@@ -26,12 +26,13 @@ root.addHandler(sh)
 from logging.handlers import TimedRotatingFileHandler
 LOG_DIR = os.path.join(os.path.dirname(__file__), '..', 'logs')
 import pathlib; pathlib.Path(LOG_DIR).mkdir(exist_ok=True)
-# Rotate at midnight, keep 3 backups (3 days)
+# Rotate at UTC midnight (aligned with Binance daily candle close), keep 3 backups
 fh = TimedRotatingFileHandler(
     os.path.join(LOG_DIR, 'scheduler.log'),
     when='midnight',
     interval=1,
-    backupCount=3
+    backupCount=3,
+    utc=True  # Use UTC time for rotation (Binance daily close = 00:00 UTC)
 )
 fh.setFormatter(logging.Formatter('%(asctime)s %(levelname)-8s %(message)s'))
 root.addHandler(fh)
