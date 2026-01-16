@@ -127,9 +127,9 @@ async def update_api_key(
         raise HTTPException(status_code=404, detail="API key not found")
     
     if key_data.api_key:
-        api_key.api_key = key_data.api_key
+        api_key.api_key = encrypt_api_key(key_data.api_key, current_user.id)
     if key_data.secret_key:
-        api_key.secret_key = key_data.secret_key
+        api_key.secret_key = encrypt_api_key(key_data.secret_key, current_user.id)
     if key_data.name is not None:
         api_key.name = key_data.name
     
@@ -142,7 +142,7 @@ async def update_api_key(
         id=api_key.id,
         name=api_key.name,
         exchange_name=exchange.name if exchange else "unknown",
-        api_key_masked=api_key.api_key[:8] + "..." + api_key.api_key[-4:],
+        api_key_masked="***updated***" if key_data.api_key else api_key.api_key[:8] + "..." if len(api_key.api_key) > 12 else "***",
         is_testnet=api_key.is_testnet,
         created_at=api_key.created_at
     )
