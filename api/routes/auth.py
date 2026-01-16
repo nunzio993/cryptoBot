@@ -262,3 +262,96 @@ async def register(request: Request, reg_data: RegisterRequest, db=Depends(get_d
 @router.get("/me", response_model=UserResponse)
 async def get_me(current_user: User = Depends(get_current_user)):
     return current_user
+
+
+# Password Reset Request/Response Models
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+    confirm_password: str
+
+
+class MessageResponse(BaseModel):
+    message: str
+
+
+# Password Reset Token Settings
+RESET_TOKEN_EXPIRE_HOURS = 1
+
+
+@router.post("/forgot-password", response_model=MessageResponse)
+@limiter.limit("3/minute")  # Max 3 requests per minute per IP
+async def forgot_password(request: Request, data: ForgotPasswordRequest, db=Depends(get_db)):
+    """
+    Request password reset email.
+    For security, always returns success message even if email doesn't exist.
+    """
+    import secrets
+    from api.services.email_service import email_service
+    
+    user = db.query(User).filter(User.email == data.email).first()
+    
+    if user:
+        # Generate secure token
+        token = secrets.token_urlsafe(32)
+        
+        # Save token with expiry
+        user.reset_token = token
+        user.reset_token_expires = datetime.now(timezone.utc) + timedelta(hours=RESET_TOKEN_EXPIRE_HOURS)
+        db.commit()
+        
+        # Send email (async would be better but sync is simpler)
+        email_service.send_password_reset_email(
+            to_email=user.email,
+            reset_token=token,
+            username=user.username
+        )
+    
+    # Always return success to prevent email enumeration
+    return MessageResponse(message="If the email exists, a password reset link has been sent.")
+
+
+@router.post("/reset-password", response_model=MessageResponse)
+@limiter.limit("5/minute")
+async def reset_password(request: Request, data: ResetPasswordRequest, db=Depends(get_db)):
+    """
+    Reset password using token from email.
+    """
+    # Validate password confirmation
+    if data.new_password != data.confirm_password:
+        raise HTTPException(status_code=400, detail="Passwords do not match")
+    
+    # Validate password strength (minimum 8 characters)
+    if len(data.new_password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+    
+    # Find user by token
+    user = db.query(User).filter(User.reset_token == data.token).first()
+    
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+    
+    # Check token expiry
+    if not user.reset_token_expires or user.reset_token_expires < datetime.now(timezone.utc):
+        # Clear expired token
+        user.reset_token = None
+        user.reset_token_expires = None
+        db.commit()
+        raise HTTPException(status_code=400, detail="Reset token has expired")
+    
+    # Update password
+    user.password_hash = generate_password_hash(data.new_password)
+    user.reset_token = None
+    user.reset_token_expires = None
+    
+    # Also reset any account lockout
+    user.failed_login_attempts = 0
+    user.locked_until = None
+    
+    db.commit()
+    
+    return MessageResponse(message="Password has been reset successfully. You can now login.")
