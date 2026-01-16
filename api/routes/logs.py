@@ -10,7 +10,9 @@ from api.deps import get_current_user
 
 router = APIRouter()
 
-LOG_PATH = Path("logs") / "scheduler.log"
+# Use path relative to project root (parent of api/)
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+LOG_PATH = PROJECT_ROOT / "logs" / "scheduler.log"
 
 
 @router.get("", response_model=List[str])

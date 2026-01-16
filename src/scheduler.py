@@ -22,10 +22,17 @@ sh = logging.StreamHandler(sys.stdout)
 sh.setFormatter(logging.Formatter('%(asctime)s %(levelname)-8s %(message)s'))
 root.addHandler(sh)
 
-# FileHandler → logs/scheduler.log
+# FileHandler → logs/scheduler.log with rotation (keep 3 days)
+from logging.handlers import TimedRotatingFileHandler
 LOG_DIR = os.path.join(os.path.dirname(__file__), '..', 'logs')
 import pathlib; pathlib.Path(LOG_DIR).mkdir(exist_ok=True)
-fh = logging.FileHandler(os.path.join(LOG_DIR, 'scheduler.log'))
+# Rotate at midnight, keep 3 backups (3 days)
+fh = TimedRotatingFileHandler(
+    os.path.join(LOG_DIR, 'scheduler.log'),
+    when='midnight',
+    interval=1,
+    backupCount=3
+)
 fh.setFormatter(logging.Formatter('%(asctime)s %(levelname)-8s %(message)s'))
 root.addHandler(fh)
 
