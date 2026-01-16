@@ -78,6 +78,7 @@ services:
       - db
     volumes:
       - ./:/app
+      - ./logs:/app/logs
 
   frontend:
     build:
