@@ -40,14 +40,9 @@ class User(Base):
     chats          = relationship("ChatSubscription", back_populates="user", cascade="all, delete-orphan")
     orders         = relationship("Order", back_populates="user", cascade="all, delete-orphan")
 
-class ChatSubscription(Base):
-    __tablename__ = "chat_subscriptions"
-    id         = Column(Integer, primary_key=True, autoincrement=True)
-    user_id    = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    chat_id    = Column(String, nullable=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    user = relationship("User", back_populates="chats")
+# NOTE: ChatSubscription class is defined below (after Order) to include 'enabled' field
+
 
 class Exchange(Base):
     __tablename__ = "exchanges"
@@ -104,7 +99,7 @@ class ChatSubscription(Base):
     enabled    = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    user = relationship("User")
+    user = relationship("User", back_populates="chats")
 
 
 class AuditLog(Base):
