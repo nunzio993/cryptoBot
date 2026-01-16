@@ -1,11 +1,10 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { TrendingUp, Lock, Loader2, ArrowLeft, CheckCircle, Eye, EyeOff } from "lucide-react";
 import Link from "next/link";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
+import { authApi } from "@/lib/api";
 
 function ResetPasswordForm() {
     const searchParams = useSearchParams();
@@ -35,26 +34,10 @@ function ResetPasswordForm() {
         setIsLoading(true);
 
         try {
-            const response = await fetch(`${API_URL}/api/auth/reset-password`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                    token,
-                    new_password: newPassword,
-                    confirm_password: confirmPassword,
-                }),
-            });
-
-            if (!response.ok) {
-                const data = await response.json();
-                throw new Error(data.detail || "Failed to reset password");
-            }
-
+            await authApi.resetPassword(token!, newPassword, confirmPassword);
             setSuccess(true);
         } catch (err: any) {
-            setError(err.message || "An error occurred");
+            setError(err.response?.data?.detail || "An error occurred");
         } finally {
             setIsLoading(false);
         }
