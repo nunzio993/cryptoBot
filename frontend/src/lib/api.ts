@@ -1,6 +1,8 @@
 import axios from "axios";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001/api";
+// Use relative URL in production (Next.js rewrites /api/* to the backend)
+// In development, the rewrite still works, so /api is fine
+const API_URL = "/api";
 
 export const api = axios.create({
     baseURL: API_URL,
