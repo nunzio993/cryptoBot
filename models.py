@@ -34,6 +34,10 @@ class User(Base):
     failed_login_attempts = Column(Integer, default=0)
     locked_until          = Column(DateTime(timezone=True), nullable=True)
     last_failed_login     = Column(DateTime(timezone=True), nullable=True)
+    
+    # Password Reset Fields
+    reset_token           = Column(String, nullable=True)
+    reset_token_expires   = Column(DateTime(timezone=True), nullable=True)
 
     # Relazioni
     api_keys       = relationship("APIKey", back_populates="user", cascade="all, delete-orphan")

@@ -270,6 +270,17 @@ export default function LoginPage() {
                                         "Create Account"
                                     )}
                                 </button>
+
+                                {isLogin && (
+                                    <div className="text-center">
+                                        <a
+                                            href="/forgot-password"
+                                            className="text-sm text-slate-400 hover:text-blue-400 transition-colors"
+                                        >
+                                            Forgot your password?
+                                        </a>
+                                    </div>
+                                )}
                             </form>
                         </>
                     )}
