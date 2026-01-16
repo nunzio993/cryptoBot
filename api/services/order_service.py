@@ -89,26 +89,57 @@ class OrderService:
             return order
     
     @staticmethod
+    def _get_symbol_step_size(adapter, symbol: str) -> float:
+        """Get step size for a symbol - works for all exchanges"""
+        try:
+            if hasattr(adapter, 'client') and hasattr(adapter.client, 'get_symbol_info'):
+                # Binance
+                symbol_info = adapter.client.get_symbol_info(symbol)
+                if symbol_info:
+                    filters = {f['filterType']: f for f in symbol_info['filters']}
+                    return float(filters.get('LOT_SIZE', {}).get('stepSize', 0.00000001))
+            elif hasattr(adapter, 'get_symbol_precision'):
+                # Bybit/ccxt
+                precision = adapter.get_symbol_precision(symbol)
+                return 10 ** (-precision)
+        except:
+            pass
+        return 0.00000001
+    
+    @staticmethod
+    def _place_market_buy(adapter, symbol: str, quantity: float):
+        """Place market buy - works for all exchanges"""
+        if hasattr(adapter, 'client') and hasattr(adapter.client, 'order_market_buy'):
+            # Binance
+            qty_str = ('{:.8f}'.format(quantity)).rstrip('0').rstrip('.')
+            return adapter.client.order_market_buy(symbol=symbol, quantity=qty_str)
+        else:
+            # Bybit/ccxt
+            return adapter.place_order(symbol=symbol, side='BUY', type_='MARKET', quantity=quantity)
+    
+    @staticmethod
     def _execute_market_order(session, order: Order, adapter) -> None:
         """Esegue un ordine market immediatamente"""
         try:
-            # Get symbol info for precision
-            symbol_info = adapter.client.get_symbol_info(order.symbol)
-            filters = {f['filterType']: f for f in symbol_info['filters']}
-            step_size = float(filters['LOT_SIZE']['stepSize'])
+            # Get step size using helper
+            step_size = OrderService._get_symbol_step_size(adapter, order.symbol)
             
             # Round quantity
             precision = len(str(step_size).rstrip('0').split('.')[-1]) if '.' in str(step_size) else 0
             qty = round(float(order.quantity), precision)
             
-            # Place market buy order
-            market_order = adapter.client.order_market_buy(
-                symbol=order.symbol,
-                quantity=qty
-            )
+            # Place market buy order using helper
+            market_order = OrderService._place_market_buy(adapter, order.symbol, qty)
             
-            # Get executed price
-            executed_price = float(market_order.get('fills', [{}])[0].get('price', order.entry_price))
+            # Get executed price (handle different response formats)
+            if isinstance(market_order, dict):
+                executed_price = float(
+                    market_order.get('fills', [{}])[0].get('price', 0) or 
+                    market_order.get('price', 0) or 
+                    order.entry_price
+                )
+            else:
+                executed_price = float(order.entry_price)
             
             # Update order
             order.status = "EXECUTED"
@@ -180,26 +211,32 @@ class OrderService:
             try:
                 # First cancel any open TP/SL orders for this symbol to unlock tokens
                 try:
-                    open_orders = adapter.client.get_open_orders(symbol=order.symbol)
-                    for oo in open_orders:
-                        if oo['side'] == 'SELL':  # TP orders are SELL
-                            try:
-                                adapter.client.cancel_order(symbol=order.symbol, orderId=oo['orderId'])
-                            except:
-                                pass
+                    if hasattr(adapter, 'client') and hasattr(adapter.client, 'get_open_orders'):
+                        # Binance
+                        open_orders = adapter.client.get_open_orders(symbol=order.symbol)
+                        for oo in open_orders:
+                            if oo['side'] == 'SELL':  # TP orders are SELL
+                                try:
+                                    adapter.client.cancel_order(symbol=order.symbol, orderId=oo['orderId'])
+                                except:
+                                    pass
+                    elif hasattr(adapter, 'cancel_all_orders'):
+                        # Other exchanges
+                        adapter.cancel_all_orders(order.symbol)
                 except:
                     pass
                 
-                # Now get the unlocked balance
-                asset_name = order.symbol.replace("USDC", "").replace("USDT", "")
+                # Extract base asset correctly
+                asset_name = order.symbol
+                for quote in ['USDC', 'USDT']:
+                    if asset_name.endswith(quote):
+                        asset_name = asset_name[:-len(quote)]
+                        break
                 
-                # Get free balance only (after canceling TP)
-                bal = adapter.client.get_asset_balance(asset=asset_name)
-                free_balance = float(bal.get('free', 0)) if bal else 0
+                # Get free balance (works for all exchanges via adapter)
+                free_balance = float(adapter.get_balance(asset_name) or 0)
                 
-                symbol_info = adapter.client.get_symbol_info(order.symbol)
-                filters = {f['filterType']: f for f in symbol_info['filters']}
-                step_size = float(filters['LOT_SIZE']['stepSize'])
+                step_size = OrderService._get_symbol_step_size(adapter, order.symbol)
                 
                 if free_balance < step_size:
                     order.status = "CLOSED_EXTERNALLY"
