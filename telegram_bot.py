@@ -8,10 +8,6 @@ from models import SessionLocal, User, ChatSubscription
 
 BOT_TOKEN = os.getenv("TG_BOT_TOKEN")
 
-import os
-print("DATABASE_URL:", os.getenv("DATABASE_URL"))
-print("TG_BOT_TOKEN:", os.getenv("TG_BOT_TOKEN"))
-
 async def link(update: Update, context: ContextTypes.DEFAULT_TYPE):
     session = SessionLocal()
     chat_id = str(update.effective_chat.id)
