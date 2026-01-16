@@ -334,16 +334,14 @@ def check_tp_fills():
                 adapter = get_exchange_adapter(order.user_id, exchange_name, is_testnet)
                 
                 # Check if there are any open SELL orders for this symbol
-                open_orders = adapter.client.get_open_orders(symbol=order.symbol)
+                open_orders = adapter.get_open_orders(symbol=order.symbol)
                 has_tp_order = any(o['side'] == 'SELL' for o in open_orders)
                 
                 if not has_tp_order:
                     # No TP order exists - check if balance shows position was sold
                     base_asset = order.symbol.replace("USDC", "").replace("USDT", "")
-                    bal = adapter.client.get_asset_balance(asset=base_asset)
-                    free_balance = float(bal.get('free', 0)) if bal else 0
-                    locked_balance = float(bal.get('locked', 0)) if bal else 0
-                    total_balance = free_balance + locked_balance
+                    bal = adapter.get_asset_balance_detail(base_asset)
+                    total_balance = bal['free'] + bal['locked']
                     order_qty = float(order.quantity) if order.quantity else 0
                     
                     # If balance is significantly lower than order qty and no TP order exists,
@@ -351,7 +349,7 @@ def check_tp_fills():
                     if total_balance < order_qty * 0.5:  # Threshold: if less than 50% remains
                         # Check recent trades to confirm TP fill
                         try:
-                            trades = adapter.client.get_my_trades(symbol=order.symbol, limit=5)
+                            trades = adapter.get_recent_trades(symbol=order.symbol, limit=5)
                             for trade in trades:
                                 if not trade.get('isBuyer', True):  # SELL trade
                                     trade_qty = float(trade.get('qty', 0))
@@ -359,7 +357,7 @@ def check_tp_fills():
                                     tp_price = float(order.take_profit) if order.take_profit else 0
                                     
                                     # If trade price is near TP and quantity matches
-                                    if trade_qty >= order_qty * 0.9 and abs(trade_price - tp_price) / tp_price < 0.02:
+                                    if tp_price > 0 and trade_qty >= order_qty * 0.9 and abs(trade_price - tp_price) / tp_price < 0.02:
                                         order.status = 'CLOSED_TP'
                                         order.closed_at = datetime.now(timezone.utc)
                                         session.commit()
