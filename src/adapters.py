@@ -204,10 +204,13 @@ class BybitAdapter(ExchangeAdapter):
         return symbol
     
     def get_balance(self, asset: str) -> float:
+        """Get total balance (free + used) for an asset"""
         try:
             bal = self.client.fetch_balance()
             if asset in bal:
-                return float(bal[asset].get('free', 0.0))
+                free = float(bal[asset].get('free', 0.0))
+                used = float(bal[asset].get('used', 0.0))
+                return free + used
             return 0.0
         except Exception as e:
             print(f"Bybit get_balance error: {e}")
