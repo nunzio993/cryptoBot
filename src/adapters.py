@@ -16,6 +16,18 @@ class ExchangeAdapter:
 
     def cancel_order(self, symbol: str, order_id):
         raise NotImplementedError
+    
+    def get_open_orders(self, symbol: str) -> list:
+        """Get open orders for a symbol - returns list of dicts with 'side', 'orderId', 'origQty', 'price'"""
+        raise NotImplementedError
+    
+    def get_asset_balance_detail(self, asset: str) -> dict:
+        """Get detailed balance - returns dict with 'free' and 'locked'"""
+        raise NotImplementedError
+    
+    def get_recent_trades(self, symbol: str, limit: int = 5) -> list:
+        """Get recent trades - returns list of dicts with 'isBuyer', 'qty', 'price'"""
+        raise NotImplementedError
 
 class BinanceAdapter(ExchangeAdapter):
 
@@ -149,7 +161,22 @@ class BinanceAdapter(ExchangeAdapter):
             except Exception as e:
                 print(f"Errore generico update TP/SL: {e}")
                 raise
-
+    
+    def get_open_orders(self, symbol: str) -> list:
+        """Get open orders for a symbol"""
+        return self.client.get_open_orders(symbol=symbol)
+    
+    def get_asset_balance_detail(self, asset: str) -> dict:
+        """Get detailed balance - returns dict with 'free' and 'locked'"""
+        bal = self.client.get_asset_balance(asset=asset)
+        if bal:
+            return {'free': float(bal.get('free', 0)), 'locked': float(bal.get('locked', 0))}
+        return {'free': 0.0, 'locked': 0.0}
+    
+    def get_recent_trades(self, symbol: str, limit: int = 5) -> list:
+        """Get recent trades - normalized format"""
+        trades = self.client.get_my_trades(symbol=symbol, limit=limit)
+        return [{'isBuyer': t.get('isBuyer', True), 'qty': float(t.get('qty', 0)), 'price': float(t.get('price', 0))} for t in trades]
 
 class BybitAdapter(ExchangeAdapter):
     """Bybit exchange adapter - spot trading"""
@@ -302,3 +329,31 @@ class BybitAdapter(ExchangeAdapter):
             except Exception as e:
                 print(f"Bybit update_spot_tp_sl error: {e}")
                 raise
+    
+    def get_open_orders(self, symbol: str) -> list:
+        """Get open orders for a symbol - ccxt format"""
+        formatted = self._format_symbol(symbol)
+        orders = self.client.fetch_open_orders(formatted)
+        # Normalize to same format as Binance
+        return [{'side': o['side'].upper(), 'orderId': o['id'], 'origQty': o['amount'], 'price': o['price']} for o in orders]
+    
+    def get_asset_balance_detail(self, asset: str) -> dict:
+        """Get detailed balance - returns dict with 'free' and 'locked'"""
+        try:
+            bal = self.client.fetch_balance()
+            if asset in bal:
+                return {'free': float(bal[asset].get('free', 0)), 'locked': float(bal[asset].get('used', 0))}
+            return {'free': 0.0, 'locked': 0.0}
+        except Exception as e:
+            print(f"Bybit get_asset_balance_detail error: {e}")
+            return {'free': 0.0, 'locked': 0.0}
+    
+    def get_recent_trades(self, symbol: str, limit: int = 5) -> list:
+        """Get recent trades - normalized format"""
+        try:
+            formatted = self._format_symbol(symbol)
+            trades = self.client.fetch_my_trades(formatted, limit=limit)
+            return [{'isBuyer': t['side'].lower() == 'buy', 'qty': float(t['amount']), 'price': float(t['price'])} for t in trades]
+        except Exception as e:
+            print(f"Bybit get_recent_trades error: {e}")
+            return []
