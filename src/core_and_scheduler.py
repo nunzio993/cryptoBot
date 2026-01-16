@@ -230,23 +230,9 @@ def auto_execute_pending():
             else:
                 tlogger.info(f"[DEBUG] order {order.id} NOT triggered")
 
-def close_position_market(self, symbol, quantity):
-    try:
-        qty_str = ('{:.8f}'.format(float(quantity))).rstrip('0').rstrip('.')
-        order = self.client.create_order(
-            symbol=symbol,
-            side='SELL',
-            type='MARKET',
-            quantity=qty_str
-        )
-        return order
-    except BinanceAPIException as e:
-        print(f"Errore BinanceAPI nella chiusura posizione: {e}")
-        raise
-    except Exception as e:
-        print(f"Errore generico nella chiusura posizione: {e}")
-        raise
-        
+# NOTE: Removed orphan close_position_market function that was defined at module level
+# but used 'self' parameter. It was dead code - use adapter.close_position_market() instead.
+
 def check_and_execute_stop_loss():
     with SessionLocal() as session:
         # Include both EXECUTED and PARTIAL_FILLED orders
@@ -277,17 +263,8 @@ def check_and_execute_stop_loss():
                 last_close <= float(order.stop_loss) and
                 candle_close_time >= order.executed_at
             ):
-                exchange = session.query(Exchange).filter_by(name="binance").first()
-                api_key_obj = session.query(APIKey).filter_by(
-                    user_id=order.user_id,
-                    exchange_id=exchange.id,
-                    is_testnet=False
-                ).first()
-                adapter = BinanceAdapter(
-                    api_key=api_key_obj.api_key,
-                    api_secret=api_key_obj.secret_key,
-                    testnet=api_key_obj.is_testnet
-                )
+                # NOTE: We reuse the 'adapter' created above (line 261) which already has
+                # decrypted API keys and correct testnet setting from get_exchange_adapter()
                 try:
                     base_asset = order.symbol.replace("USDC", "").replace("USDT", "")
                     balance = float(client.get_asset_balance(asset=base_asset)['free'])
@@ -307,7 +284,7 @@ def check_and_execute_stop_loss():
                     original_qty = float(order.quantity)
                     qty_to_close = min(original_qty, balance)
                     
-                    # Execute SL
+                    # Execute SL using the correctly initialized adapter
                     adapter.close_position_market(order.symbol, qty_to_close)
                     
                     # Update order with actual closed quantity

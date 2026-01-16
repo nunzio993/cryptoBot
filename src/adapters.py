@@ -80,10 +80,16 @@ class BinanceAdapter(ExchangeAdapter):
         ticker = self.client.get_symbol_ticker(symbol=symbol)
         return float(ticker['price'])
 
-    def __init__(self, api_key, api_secret, testnet=True):
-        self.client = Client(api_key, api_secret, testnet=testnet)
+    # NOTE: __init__ is defined above (line 34) - removed duplicate here
 
     def get_client(self, user_id):
+        """
+        DEPRECATED: Use get_exchange_adapter() from core_and_scheduler.py instead.
+        This method does not decrypt API keys and may fail with encrypted keys.
+        """
+        import warnings
+        warnings.warn("get_client() is deprecated. Use get_exchange_adapter() instead.", DeprecationWarning)
+        
         with SessionLocal() as session:
             exchange = session.query(Exchange).filter_by(name="binance").first()
             if not exchange:
@@ -98,6 +104,7 @@ class BinanceAdapter(ExchangeAdapter):
             if not api_key_entry:
                 raise Exception(f"Nessuna API key trovata per user_id={user_id}")
 
+            # NOTE: This does NOT decrypt keys - use get_exchange_adapter() instead
             return Client(api_key_entry.api_key, api_key_entry.secret_key)
 
     def get_balance(self, asset: str) -> float:

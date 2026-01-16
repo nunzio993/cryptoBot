@@ -432,8 +432,13 @@ async def create_order_from_holding(
     tick_size = float(filters['PRICE_FILTER']['tickSize'])
     min_qty = float(filters['LOT_SIZE']['minQty'])
     
-    # Check actual balance available
-    asset_name = order_data.symbol.replace("USDC", "").replace("USDT", "").replace("BTC", "").replace("ETH", "")
+    # Check actual balance available - extract base asset correctly
+    # For BTCUSDC -> BTC, for ETHUSDT -> ETH, etc.
+    asset_name = order_data.symbol
+    for quote in ['USDC', 'USDT']:
+        if asset_name.endswith(quote):
+            asset_name = asset_name[:-len(quote)]
+            break
     balance_info = adapter.get_balance(asset_name)
     free_balance = float(balance_info) if balance_info else 0
     
@@ -740,20 +745,29 @@ async def update_order(
     if order_data.stop_loss is not None:
         order.stop_loss = Decimal(str(order_data.stop_loss))
     
-    # If EXECUTED, update on Binance too
+    # If EXECUTED, update on exchange too - use order's exchange, not hardcoded "binance"
     if order.status == "EXECUTED" and (order_data.take_profit or order_data.stop_loss):
-        exchange = db.query(Exchange).filter_by(name="binance").first()
+        # Get the exchange from the order, default to binance for old orders
+        if order.exchange_id:
+            exchange = db.query(Exchange).filter_by(id=order.exchange_id).first()
+        else:
+            exchange = db.query(Exchange).filter_by(name="binance").first()
+        
+        if not exchange:
+            raise HTTPException(status_code=400, detail="Exchange not found")
+        
         key = db.query(APIKey).filter_by(
             user_id=current_user.id,
             exchange_id=exchange.id,
-            is_testnet=(network_mode == "Testnet")
+            is_testnet=order.is_testnet  # Use order's testnet setting
         ).first()
         
         if key:
+            from src.exchange_factory import ExchangeFactory
             from src.crypto_utils import decrypt_api_key
             decrypted_key = decrypt_api_key(key.api_key, current_user.id)
             decrypted_secret = decrypt_api_key(key.secret_key, current_user.id)
-            adapter = BinanceAdapter(decrypted_key, decrypted_secret, testnet=(network_mode == "Testnet"))
+            adapter = ExchangeFactory.create(exchange.name, decrypted_key, decrypted_secret, testnet=order.is_testnet)
             
             # Validate TP > current price (for LONG positions)
             try:
@@ -831,22 +845,30 @@ async def close_order(
     if order.status != "EXECUTED":
         raise HTTPException(status_code=400, detail="Can only close EXECUTED orders")
     
-    # Get adapter
-    exchange = db.query(Exchange).filter_by(name="binance").first()
+    # Get adapter - use order's exchange, not hardcoded "binance"
+    if order.exchange_id:
+        exchange = db.query(Exchange).filter_by(id=order.exchange_id).first()
+    else:
+        exchange = db.query(Exchange).filter_by(name="binance").first()
+    
+    if not exchange:
+        raise HTTPException(status_code=400, detail="Exchange not found")
+    
     key = db.query(APIKey).filter_by(
         user_id=current_user.id,
         exchange_id=exchange.id,
-        is_testnet=(network_mode == "Testnet")
+        is_testnet=order.is_testnet  # Use order's testnet setting
     ).first()
     
     if not key:
         raise HTTPException(status_code=400, detail="No API key configured")
     
+    from src.exchange_factory import ExchangeFactory
     from src.crypto_utils import decrypt_api_key
     decrypted_key = decrypt_api_key(key.api_key, current_user.id)
     decrypted_secret = decrypt_api_key(key.secret_key, current_user.id)
     
-    adapter = BinanceAdapter(decrypted_key, decrypted_secret, testnet=(network_mode == "Testnet"))
+    adapter = ExchangeFactory.create(exchange.name, decrypted_key, decrypted_secret, testnet=order.is_testnet)
     
     try:
         asset_name = order.symbol.replace("USDC", "")
