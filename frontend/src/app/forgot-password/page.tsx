@@ -3,8 +3,7 @@
 import { useState } from "react";
 import { TrendingUp, Mail, Loader2, ArrowLeft, CheckCircle } from "lucide-react";
 import Link from "next/link";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001";
+import { authApi } from "@/lib/api";
 
 export default function ForgotPasswordPage() {
     const [email, setEmail] = useState("");
@@ -18,22 +17,10 @@ export default function ForgotPasswordPage() {
         setIsLoading(true);
 
         try {
-            const response = await fetch(`${API_URL}/api/auth/forgot-password`, {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({ email }),
-            });
-
-            if (!response.ok) {
-                const data = await response.json();
-                throw new Error(data.detail || "Failed to send reset email");
-            }
-
+            await authApi.forgotPassword(email);
             setSuccess(true);
         } catch (err: any) {
-            setError(err.message || "An error occurred");
+            setError(err.response?.data?.detail || "An error occurred");
         } finally {
             setIsLoading(false);
         }

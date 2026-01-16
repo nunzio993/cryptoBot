@@ -222,4 +222,10 @@ export const twoFactorApi = {
 export const authApi = {
     loginWith2FA: (username: string, password: string, totpCode: string) =>
         api.post("/auth/login/2fa", { username, password, totp_code: totpCode }),
+
+    forgotPassword: (email: string) =>
+        api.post("/auth/forgot-password", { email }),
+
+    resetPassword: (token: string, newPassword: string, confirmPassword: string) =>
+        api.post("/auth/reset-password", { token, new_password: newPassword, confirm_password: confirmPassword }),
 };
