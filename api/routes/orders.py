@@ -15,6 +15,76 @@ from src.core_and_scheduler import fetch_last_closed_candle
 router = APIRouter()
 
 
+def get_symbol_filters(adapter, symbol: str) -> dict:
+    """
+    Get symbol trading filters (step_size, tick_size, min_qty, min_notional) 
+    for both Binance and Bybit adapters.
+    
+    Returns:
+        dict with keys: step_size, tick_size, min_qty, min_notional
+    """
+    defaults = {
+        'step_size': 0.00000001,
+        'tick_size': 0.00000001,
+        'min_qty': 0.00000001,
+        'min_notional': 0
+    }
+    
+    try:
+        # Binance - uses client.get_symbol_info
+        if hasattr(adapter, 'client') and hasattr(adapter.client, 'get_symbol_info'):
+            symbol_info = adapter.client.get_symbol_info(symbol)
+            if symbol_info:
+                filters = {f['filterType']: f for f in symbol_info['filters']}
+                return {
+                    'step_size': float(filters.get('LOT_SIZE', {}).get('stepSize', defaults['step_size'])),
+                    'tick_size': float(filters.get('PRICE_FILTER', {}).get('tickSize', defaults['tick_size'])),
+                    'min_qty': float(filters.get('LOT_SIZE', {}).get('minQty', defaults['min_qty'])),
+                    'min_notional': float(filters.get('NOTIONAL', filters.get('MIN_NOTIONAL', {})).get('minNotional', 0))
+                }
+        
+        # Bybit/ccxt - uses adapter method
+        elif hasattr(adapter, 'get_symbol_precision'):
+            precision = adapter.get_symbol_precision(symbol)
+            step_size = 10 ** (-precision)
+            return {
+                'step_size': step_size,
+                'tick_size': step_size,  # Use same for price
+                'min_qty': step_size,
+                'min_notional': 0
+            }
+    except Exception:
+        pass
+    
+    return defaults
+
+
+def get_current_price(adapter, symbol: str) -> float:
+    """Get current price for a symbol from either Binance or Bybit"""
+    try:
+        if hasattr(adapter, 'client') and hasattr(adapter.client, 'get_symbol_ticker'):
+            # Binance
+            return float(adapter.client.get_symbol_ticker(symbol=symbol)['price'])
+        elif hasattr(adapter, 'get_symbol_price'):
+            # Bybit
+            return adapter.get_symbol_price(symbol)
+    except:
+        pass
+    return 0.0
+
+
+def place_market_buy(adapter, symbol: str, quantity: float):
+    """Place market buy order on either Binance or Bybit"""
+    if hasattr(adapter, 'client') and hasattr(adapter.client, 'order_market_buy'):
+        # Binance
+        qty_str = ('{:.8f}'.format(quantity)).rstrip('0').rstrip('.')
+        return adapter.client.order_market_buy(symbol=symbol, quantity=qty_str)
+    else:
+        # Bybit
+        return adapter.place_order(symbol=symbol, side='BUY', type_='MARKET', quantity=quantity)
+
+
+
 class PositionInfo(BaseModel):
     order_id: int
     symbol: str
@@ -137,14 +207,11 @@ async def get_portfolio(
         
         # Check if quantity is below minimum sellable (skip dust positions)
         try:
-            if hasattr(adapter, 'client'):
-                symbol_info = adapter.client.get_symbol_info(order.symbol)
-                if symbol_info:
-                    filters = {f['filterType']: f for f in symbol_info['filters']}
-                    min_qty = float(filters.get('LOT_SIZE', {}).get('minQty', 0))
-                    if quantity < min_qty:
-                        # Position too small to sell, skip it
-                        continue
+            filters = get_symbol_filters(adapter, order.symbol)
+            min_qty = filters['min_qty']
+            if quantity < min_qty:
+                # Position too small to sell, skip it
+                continue
         except:
             pass  # If we can't check, show it anyway
         
@@ -425,20 +492,19 @@ async def create_order_from_holding(
         exchange.name, decrypted_key, decrypted_secret, testnet=key.is_testnet
     )
     
-    # Get symbol info for quantity formatting
-    symbol_info = adapter.client.get_symbol_info(order_data.symbol)
-    filters = {f['filterType']: f for f in symbol_info['filters']}
-    step_size = float(filters['LOT_SIZE']['stepSize'])
-    tick_size = float(filters['PRICE_FILTER']['tickSize'])
-    min_qty = float(filters['LOT_SIZE']['minQty'])
+    # Get symbol info using helper function (works for all exchanges)
+    filters = get_symbol_filters(adapter, order_data.symbol)
+    step_size = filters['step_size']
+    tick_size = filters['tick_size']
+    min_qty = filters['min_qty']
     
-    # Check actual balance available - extract base asset correctly
-    # For BTCUSDC -> BTC, for ETHUSDT -> ETH, etc.
+    # Extract base asset correctly (BTCUSDC -> BTC, ETHUSDT -> ETH)
     asset_name = order_data.symbol
     for quote in ['USDC', 'USDT']:
         if asset_name.endswith(quote):
             asset_name = asset_name[:-len(quote)]
             break
+    
     balance_info = adapter.get_balance(asset_name)
     free_balance = float(balance_info) if balance_info else 0
     
@@ -462,16 +528,27 @@ async def create_order_from_holding(
             detail=f"Quantity {qty} is below minimum {min_qty}"
         )
     
-    # Place TP LIMIT order on exchange
+    # Place TP LIMIT order on exchange (works for all exchanges)
     try:
-        adapter.client.create_order(
-            symbol=order_data.symbol,
-            side='SELL',
-            type='LIMIT',
-            timeInForce='GTC',
-            quantity=str(qty),
-            price=str(tp_price)
-        )
+        if hasattr(adapter, 'client') and hasattr(adapter.client, 'create_order'):
+            # Binance
+            adapter.client.create_order(
+                symbol=order_data.symbol,
+                side='SELL',
+                type='LIMIT',
+                timeInForce='GTC',
+                quantity=str(qty),
+                price=str(tp_price)
+            )
+        else:
+            # Other exchanges (Bybit, etc.)
+            adapter.place_order(
+                symbol=order_data.symbol,
+                side='SELL',
+                type_='LIMIT',
+                quantity=float(qty),
+                price=float(tp_price)
+            )
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to place TP order on exchange: {str(e)}")
     
@@ -479,6 +556,7 @@ async def create_order_from_holding(
     order = Order(
         user_id=current_user.id,
         symbol=order_data.symbol,
+        side="LONG",  # External holdings are assumed to be LONG positions
         quantity=float(qty),
         entry_price=order_data.entry_price,
         max_entry=order_data.entry_price,
@@ -660,14 +738,13 @@ async def create_order(
     # Execute immediately for Market orders
     if is_market_order:
         try:
-            # Get symbol info for precision
-            symbol_info = adapter.client.get_symbol_info(order_data.symbol)
-            filters = {f['filterType']: f for f in symbol_info['filters']}
-            step_size = float(filters['LOT_SIZE']['stepSize'])
-            min_qty = float(filters['LOT_SIZE']['minQty'])
-            min_notional = float(filters.get('NOTIONAL', filters.get('MIN_NOTIONAL', {})).get('minNotional', 0))
+            # Get symbol info using helper (works for all exchanges)
+            filters = get_symbol_filters(adapter, order_data.symbol)
+            step_size = filters['step_size']
+            min_qty = filters['min_qty']
+            min_notional = filters['min_notional']
             
-            # Round quantity DOWN to step size (Binance requirement)
+            # Round quantity DOWN to step size
             import math
             qty = math.floor(float(order_data.quantity) / step_size) * step_size
             
@@ -675,23 +752,20 @@ async def create_order(
             if qty < min_qty:
                 raise Exception(f"Quantity {qty} below minimum {min_qty}")
             
-            # Check minimum notional
-            current_price = float(adapter.client.get_symbol_ticker(symbol=order_data.symbol)['price'])
+            # Check minimum notional using helper
+            current_price = get_current_price(adapter, order_data.symbol)
             notional = qty * current_price
-            if notional < min_notional:
+            if min_notional > 0 and notional < min_notional:
                 raise Exception(f"Order value ${notional:.2f} below minimum ${min_notional:.2f}")
             
-            # Format quantity as string
-            qty_str = ('{:.8f}'.format(qty)).rstrip('0').rstrip('.')
+            # Place market buy order using helper
+            market_order = place_market_buy(adapter, order_data.symbol, qty)
             
-            # Place market buy order
-            market_order = adapter.client.order_market_buy(
-                symbol=order_data.symbol,
-                quantity=qty_str
-            )
-            
-            # Get executed price
-            executed_price = float(market_order.get('fills', [{}])[0].get('price', order_data.entry_price))
+            # Get executed price (handle different response formats)
+            if isinstance(market_order, dict):
+                executed_price = float(market_order.get('fills', [{}])[0].get('price', 0) or 
+                                      market_order.get('price', 0) or 
+                                      order_data.entry_price)
             
             # Update order status
             order.status = "EXECUTED"
@@ -745,29 +819,20 @@ async def update_order(
     if order_data.stop_loss is not None:
         order.stop_loss = Decimal(str(order_data.stop_loss))
     
-    # If EXECUTED, update on exchange too - use order's exchange, not hardcoded "binance"
+    # If EXECUTED, update on Binance too
     if order.status == "EXECUTED" and (order_data.take_profit or order_data.stop_loss):
-        # Get the exchange from the order, default to binance for old orders
-        if order.exchange_id:
-            exchange = db.query(Exchange).filter_by(id=order.exchange_id).first()
-        else:
-            exchange = db.query(Exchange).filter_by(name="binance").first()
-        
-        if not exchange:
-            raise HTTPException(status_code=400, detail="Exchange not found")
-        
+        exchange = db.query(Exchange).filter_by(name="binance").first()
         key = db.query(APIKey).filter_by(
             user_id=current_user.id,
             exchange_id=exchange.id,
-            is_testnet=order.is_testnet  # Use order's testnet setting
+            is_testnet=(network_mode == "Testnet")
         ).first()
         
         if key:
-            from src.exchange_factory import ExchangeFactory
             from src.crypto_utils import decrypt_api_key
             decrypted_key = decrypt_api_key(key.api_key, current_user.id)
             decrypted_secret = decrypt_api_key(key.secret_key, current_user.id)
-            adapter = ExchangeFactory.create(exchange.name, decrypted_key, decrypted_secret, testnet=order.is_testnet)
+            adapter = BinanceAdapter(decrypted_key, decrypted_secret, testnet=(network_mode == "Testnet"))
             
             # Validate TP > current price (for LONG positions)
             try:
@@ -871,13 +936,18 @@ async def close_order(
     adapter = ExchangeFactory.create(exchange.name, decrypted_key, decrypted_secret, testnet=order.is_testnet)
     
     try:
-        asset_name = order.symbol.replace("USDC", "")
+        # Extract base asset correctly
+        asset_name = order.symbol
+        for quote in ['USDC', 'USDT']:
+            if asset_name.endswith(quote):
+                asset_name = asset_name[:-len(quote)]
+                break
+        
         balance = adapter.get_balance(asset_name)
         
-        symbol_info = adapter.client.get_symbol_info(order.symbol)
-        filters = {f['filterType']: f for f in symbol_info['filters']}
-        step_size = float(filters['LOT_SIZE']['stepSize'])
-        min_qty = float(filters['LOT_SIZE']['minQty'])
+        # Use helper for symbol filters
+        filters = get_symbol_filters(adapter, order.symbol)
+        min_qty = filters['min_qty']
         
         if balance < min_qty:
             order.status = "CLOSED_EXTERNALLY"
