@@ -133,6 +133,24 @@ class BinanceAdapter(ExchangeAdapter):
         logger = logging.getLogger('adapters')
         
         try:
+            # Get symbol info for proper formatting
+            symbol_info = self.client.get_symbol_info(symbol)
+            filters = {f['filterType']: f for f in symbol_info['filters']}
+            step_size = filters['LOT_SIZE']['stepSize']
+            tick_size = filters['PRICE_FILTER']['tickSize']
+            
+            from decimal import Decimal, ROUND_DOWN
+            
+            def format_qty(qty):
+                step = Decimal(str(step_size))
+                qty_dec = Decimal(str(qty)).quantize(step, rounding=ROUND_DOWN)
+                return str(qty_dec).rstrip('0').rstrip('.')
+            
+            def format_price(price):
+                tick = Decimal(str(tick_size))
+                price_dec = Decimal(str(price)).quantize(tick, rounding=ROUND_DOWN)
+                return str(price_dec).rstrip('0').rstrip('.')
+            
             # Cancel existing TP order
             if tp_order_id:
                 # Best case: we know the exact order ID
@@ -157,18 +175,21 @@ class BinanceAdapter(ExchangeAdapter):
                             self.client.cancel_order(symbol=symbol, orderId=order['orderId'])
                             break
 
-            # Create new TP order
-            qty_str = ('{:.8f}'.format(float(quantity))).rstrip('0').rstrip('.')
+            # Create new TP order with properly formatted qty and price
+            qty_str = format_qty(quantity)
+            price_str = format_price(new_tp)
+            logger.info(f"[UPDATE_TP] Creating TP order: qty={qty_str} price={price_str}")
+            
             new_order = self.client.create_order(
                 symbol=symbol,
                 side='SELL',
                 type='LIMIT',
                 timeInForce='GTC',
                 quantity=qty_str,
-                price=str(new_tp)
+                price=price_str
             )
             new_tp_order_id = str(new_order.get('orderId'))
-            logger.info(f"[UPDATE_TP] Created new TP order {new_tp_order_id} @ {new_tp}")
+            logger.info(f"[UPDATE_TP] Created new TP order {new_tp_order_id} @ {price_str}")
 
             return new_tp_order_id
         except BinanceAPIException as e:
