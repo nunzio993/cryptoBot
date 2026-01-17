@@ -943,6 +943,15 @@ async def close_order(
             return {"message": "Balance too low to sell, marked as closed"}
         
         qty_to_close = min(float(order.quantity), balance)
+        
+        # Cancel TP order first if it exists (to release locked funds)
+        if order.tp_order_id:
+            try:
+                adapter.cancel_order(order.symbol, order.tp_order_id)
+            except Exception as cancel_err:
+                # TP may already be filled or cancelled, continue anyway
+                pass
+        
         adapter.close_position_market(order.symbol, qty_to_close)
         
         order.status = "CLOSED_MANUAL"
