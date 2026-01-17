@@ -4,6 +4,7 @@ python-binance==1.0.28
 streamlit>=1.45.0
 pandas
 ccxt
+pybit>=5.0.0
 python-telegram-bot>=20.0
 SQLAlchemy>=2.0
 psycopg2-binary
