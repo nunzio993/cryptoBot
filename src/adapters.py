@@ -130,14 +130,41 @@ class BinanceAdapter(ExchangeAdapter):
     def cancel_order(self, symbol: str, order_id):
         return self.client.cancel_order(symbol=symbol, orderId=order_id)
 
-    def update_spot_tp_sl(self, symbol, quantity, new_tp, new_sl, user_id=None):
+    def update_spot_tp_sl(self, symbol, quantity, new_tp, new_sl, user_id=None, old_tp=None):
+        """
+        Update TP/SL for a position.
+        old_tp: If provided, used to identify the specific order to cancel
+        """
         with SessionLocal() as session:
             try:
                 open_orders = self.client.get_open_orders(symbol=symbol)
+                
+                # Find and cancel the specific order we want to update
+                # Match by quantity AND price (if old_tp provided)
+                order_cancelled = False
+                orders_to_restore = []  # Other orders we might accidentally affect
+                
                 for order in open_orders:
-                    if order['side'] == 'SELL' and float(order['origQty']) == float(quantity):
-                        self.client.cancel_order(symbol=symbol, orderId=order['orderId'])
+                    if order['side'] == 'SELL':
+                        order_qty = float(order['origQty'])
+                        order_price = float(order['price'])
+                        
+                        qty_matches = abs(order_qty - float(quantity)) < 0.0001
+                        
+                        if old_tp and qty_matches:
+                            # If old_tp provided, match by price too
+                            if abs(order_price - float(old_tp)) < 0.01:
+                                self.client.cancel_order(symbol=symbol, orderId=order['orderId'])
+                                order_cancelled = True
+                            else:
+                                # Same qty but different price - save for reference
+                                orders_to_restore.append({'qty': order_qty, 'price': order_price})
+                        elif qty_matches and not order_cancelled:
+                            # No old_tp, just match by qty (legacy behavior)
+                            self.client.cancel_order(symbol=symbol, orderId=order['orderId'])
+                            order_cancelled = True
 
+                # Create new TP order
                 qty_str = ('{:.8f}'.format(float(quantity))).rstrip('0').rstrip('.')
                 self.client.create_order(
                     symbol=symbol,
@@ -148,6 +175,7 @@ class BinanceAdapter(ExchangeAdapter):
                     price=str(new_tp)
                 )
 
+                # Update DB
                 order_query = session.query(Order).filter(
                     Order.symbol == symbol,
                     Order.quantity == quantity,
