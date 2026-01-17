@@ -17,7 +17,6 @@ RUN apt-get update \
 COPY src/ ./src/
 COPY src/core_and_scheduler.py src/scheduler.py ./src/
 COPY symbols.py ./
-COPY credentials.yaml ./
 COPY models.py ./
 COPY telegram_bot.py ./
 # se hai altri script di entrypoint, copiali qui
