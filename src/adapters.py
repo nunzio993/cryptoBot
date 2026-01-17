@@ -562,6 +562,38 @@ class BybitAdapter(ExchangeAdapter):
         """Place a market buy order"""
         return self.place_order(symbol=symbol, side='Buy', type_='market', quantity=quantity)
     
+    def create_order(self, symbol: str, side: str, type: str, quantity: str, price: str = None, timeInForce: str = None, **kwargs) -> dict:
+        """Create order - Binance-compatible signature"""
+        order_type = "Market" if type.upper() == 'MARKET' else "Limit"
+        order_side = side.capitalize()
+        
+        params = {
+            "category": "spot",
+            "symbol": self._format_symbol(symbol),
+            "side": order_side,
+            "orderType": order_type,
+            "qty": str(quantity),
+        }
+        
+        if order_type == "Limit" and price:
+            params["price"] = str(price)
+            params["timeInForce"] = timeInForce or "GTC"
+        
+        result = self.session.place_order(**params)
+        if result['retCode'] != 0:
+            raise Exception(f"Bybit order failed: {result['retMsg']}")
+        
+        # Return in Binance-compatible format
+        return {
+            'orderId': result['result'].get('orderId'),
+            'symbol': symbol,
+            'side': side,
+            'type': type,
+            'origQty': quantity,
+            'price': price,
+            'status': 'NEW'
+        }
+    
     def get_symbol_ticker(self, symbol: str) -> dict:
         """Get symbol ticker - normalized to Binance format"""
         try:
