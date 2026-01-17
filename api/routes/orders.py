@@ -458,8 +458,9 @@ async def create_order_from_holding(
         )
     
     # Place TP LIMIT order on exchange
+    tp_order_id = None
     try:
-        adapter.client.create_order(
+        tp_response = adapter.client.create_order(
             symbol=order_data.symbol,
             side='SELL',
             type='LIMIT',
@@ -467,6 +468,7 @@ async def create_order_from_holding(
             quantity=str(qty),
             price=str(tp_price)
         )
+        tp_order_id = str(tp_response.get('orderId'))
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to place TP order on exchange: {str(e)}")
     
@@ -474,6 +476,7 @@ async def create_order_from_holding(
     order = Order(
         user_id=current_user.id,
         symbol=order_data.symbol,
+        side='BUY',  # External holdings are assumed to be BUY positions
         quantity=float(qty),
         entry_price=order_data.entry_price,
         max_entry=order_data.entry_price,
@@ -485,7 +488,8 @@ async def create_order_from_holding(
         is_testnet=key.is_testnet,
         exchange_id=key.exchange_id,
         executed_price=order_data.entry_price,
-        executed_at=datetime.now(timezone.utc)
+        executed_at=datetime.now(timezone.utc),
+        tp_order_id=tp_order_id
     )
     
     db.add(order)
