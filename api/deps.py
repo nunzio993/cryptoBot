@@ -10,8 +10,10 @@ from jose import JWTError, jwt
 from pydantic import BaseModel
 from models import SessionLocal, User
 
-# JWT Configuration
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", os.getenv("SECRET_KEY", "change-this-secret-key-in-production"))
+# JWT Configuration - SECRET_KEY is REQUIRED
+SECRET_KEY = os.getenv("JWT_SECRET_KEY") or os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    raise RuntimeError("SECRET_KEY or JWT_SECRET_KEY environment variable is required. Set it in .env file.")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7 days
 

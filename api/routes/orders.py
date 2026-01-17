@@ -614,6 +614,32 @@ async def create_order(
     
     adapter = ExchangeFactory.create(exchange_name, decrypted_key, decrypted_secret, testnet=(network_mode == "Testnet"))
     
+    # Check USDC balance before creating order
+    order_value = float(order_data.quantity) * float(order_data.max_entry)
+    try:
+        usdc_balance = adapter.get_balance("USDC")
+        
+        # Calculate already blocked USDC from pending orders
+        pending_orders = db.query(Order).filter(
+            Order.user_id == current_user.id,
+            Order.status == "PENDING",
+            Order.api_key_id == key.id
+        ).all()
+        blocked_usdc = sum(float(o.quantity) * float(o.max_entry or o.entry_price) for o in pending_orders)
+        
+        available_usdc = usdc_balance - blocked_usdc
+        
+        if order_value > available_usdc:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Saldo insufficiente: richiesti ${order_value:.2f}, disponibili ${available_usdc:.2f} USDC"
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        # Log error but allow order creation if balance check fails
+        print(f"[WARNING] Balance check failed: {e}")
+    
     is_market_order = order_data.entry_interval == "Market"
     
     if not is_market_order:

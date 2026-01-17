@@ -1,14 +1,12 @@
 # src/telegram_notifications.py
 import sys
 import os
-import sqlite3
 import asyncio
 from telegram import Bot
 from telegram.constants import ParseMode
 from models import SessionLocal, ChatSubscription
 
 BOT_TOKEN = os.getenv("TG_BOT_TOKEN")
-DB_PATH   = os.getenv("DB_PATH", "trades.db")
 
 def get_user_chat_ids(user_id):
     with SessionLocal() as session:
@@ -32,22 +30,20 @@ def _send_message_sync(chat_id, text, parse_mode=None):
 
 def get_all_chat_ids():
     """
-    Legge la tabella telegram_subscribers e restituisce i chat_id abilitati.
+    Restituisce tutti i chat_id abilitati dalla tabella chat_subscriptions (PostgreSQL).
     """
-    conn = sqlite3.connect(DB_PATH)
-    cur  = conn.cursor()
-    cur.execute("SELECT chat_id FROM telegram_subscribers WHERE enabled=1")
-    rows = cur.fetchall()
-    conn.close()
-    return [int(row[0]) for row in rows]
+    with SessionLocal() as session:
+        rows = session.query(ChatSubscription).filter_by(enabled=True).all()
+        return [row.chat_id for row in rows]
 
 def broadcast(text, parse_mode=None):
     """
-    Manda il testo a tutti gli iscritti in telegram_subscribers.
+    Manda il testo a tutti gli iscritti.
     """
     for chat_id in get_all_chat_ids():
         print(f"📤 invio a chat_id: {chat_id}")
         _send_message_sync(chat_id, text, parse_mode)
+
 
 def notify_open(order, exchange_name=None):
     network = "Testnet 🧪" if getattr(order, 'is_testnet', False) else "Mainnet 🌐"

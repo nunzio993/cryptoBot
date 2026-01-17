@@ -106,40 +106,64 @@ export default function DashboardPage() {
                 />
             </div>
 
+            {/* No API Keys Warning */}
+            {apiKeys.length === 0 && (
+                <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-6">
+                    <div className="flex items-start gap-4">
+                        <div className="w-12 h-12 rounded-xl bg-amber-500/20 flex items-center justify-center flex-shrink-0">
+                            <AlertTriangle className="w-6 h-6 text-amber-500" />
+                        </div>
+                        <div>
+                            <h3 className="font-semibold text-lg text-amber-500">API Keys non configurate</h3>
+                            <p className="text-muted-foreground mt-1">
+                                Per visualizzare il tuo portfolio e iniziare a fare trading, devi prima configurare le tue API keys.
+                            </p>
+                            <a
+                                href="/dashboard/settings"
+                                className="inline-flex items-center gap-2 mt-3 px-4 py-2 bg-amber-500 text-black font-medium rounded-xl hover:bg-amber-400 transition-colors"
+                            >
+                                Vai a Impostazioni → API Keys
+                                <ArrowUpRight className="w-4 h-4" />
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Portfolio Stats */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <BalanceCard
                     title="Total Portfolio"
-                    value={formatCurrency(portfolio?.portfolio_total || 0)}
-                    subtitle={`${formatCurrency(totalCryptoValue)} in crypto`}
+                    value={formatCurrency(apiKeys.length > 0 ? (portfolio?.portfolio_total || 0) : 0)}
+                    subtitle={`${formatCurrency(apiKeys.length > 0 ? totalCryptoValue : 0)} in crypto`}
                     icon={<Wallet className="w-5 h-5" />}
                     trend={totalPnl !== 0 ? { value: totalPnlPercent, isPositive: totalPnl > 0 } : undefined}
-                    isLoading={isLoading}
+                    isLoading={isLoading && apiKeys.length > 0}
                 />
                 <BalanceCard
                     title="Available USDC"
-                    value={formatCurrency(portfolio?.usdc_available || 0)}
-                    subtitle={`${formatCurrency(portfolio?.usdc_blocked || 0)} in pending`}
+                    value={formatCurrency(apiKeys.length > 0 ? (portfolio?.usdc_available || 0) : 0)}
+                    subtitle={`${formatCurrency(apiKeys.length > 0 ? (portfolio?.usdc_blocked || 0) : 0)} in pending`}
                     icon={<DollarSign className="w-5 h-5" />}
-                    isLoading={isLoading}
+                    isLoading={isLoading && apiKeys.length > 0}
                 />
                 <BalanceCard
                     title="Crypto Holdings"
-                    value={formatCurrency(totalCryptoValue)}
-                    subtitle={`${portfolio?.positions.length || 0} active positions`}
+                    value={formatCurrency(apiKeys.length > 0 ? totalCryptoValue : 0)}
+                    subtitle={`${apiKeys.length > 0 ? (portfolio?.positions.length || 0) : 0} active positions`}
                     icon={<PiggyBank className="w-5 h-5" />}
-                    isLoading={isLoading}
+                    isLoading={isLoading && apiKeys.length > 0}
                 />
                 <BalanceCard
                     title="Total P&L"
-                    value={formatCurrency(totalPnl)}
+                    value={formatCurrency(apiKeys.length > 0 ? totalPnl : 0)}
                     icon={totalPnl >= 0 ? <TrendingUp className="w-5 h-5" /> : <TrendingDown className="w-5 h-5" />}
                     trend={{ value: totalPnlPercent, isPositive: totalPnl >= 0 }}
                     className={cn(
                         totalPnl > 0 && "border-green-500/30 bg-green-500/5",
                         totalPnl < 0 && "border-red-500/30 bg-red-500/5"
                     )}
-                    isLoading={isLoading}
+                    isLoading={isLoading && apiKeys.length > 0}
                 />
             </div>
 

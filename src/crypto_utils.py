@@ -7,8 +7,10 @@ import base64
 import hashlib
 from cryptography.fernet import Fernet
 
-# Get master key from environment
-MASTER_KEY = os.getenv("SECRET_KEY", "fallback-insecure-key-change-me")
+# Get master key from environment - REQUIRED
+MASTER_KEY = os.getenv("SECRET_KEY")
+if not MASTER_KEY:
+    raise RuntimeError("SECRET_KEY environment variable is required. Set it in .env file.")
 
 
 def _derive_key(user_id: int) -> bytes:
