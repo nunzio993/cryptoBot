@@ -160,6 +160,7 @@ export function OrdersTable({
                                         value={splitValues.tp1}
                                         onChange={(e) => setSplitValues({ ...splitValues, tp1: parseFloat(e.target.value) })}
                                         className="w-full px-3 py-2 rounded-lg bg-muted border border-border"
+                                        step="0.01"
                                     />
                                 </div>
                                 <div>
@@ -169,6 +170,7 @@ export function OrdersTable({
                                         value={splitValues.sl1}
                                         onChange={(e) => setSplitValues({ ...splitValues, sl1: parseFloat(e.target.value) })}
                                         className="w-full px-3 py-2 rounded-lg bg-muted border border-border"
+                                        step="0.01"
                                     />
                                 </div>
                                 <div>
@@ -178,6 +180,7 @@ export function OrdersTable({
                                         value={splitValues.tp2}
                                         onChange={(e) => setSplitValues({ ...splitValues, tp2: parseFloat(e.target.value) })}
                                         className="w-full px-3 py-2 rounded-lg bg-muted border border-border"
+                                        step="0.01"
                                     />
                                 </div>
                                 <div>
@@ -187,6 +190,7 @@ export function OrdersTable({
                                         value={splitValues.sl2}
                                         onChange={(e) => setSplitValues({ ...splitValues, sl2: parseFloat(e.target.value) })}
                                         className="w-full px-3 py-2 rounded-lg bg-muted border border-border"
+                                        step="0.01"
                                     />
                                 </div>
                             </div>
