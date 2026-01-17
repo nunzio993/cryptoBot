@@ -178,7 +178,7 @@ class BinanceAdapter(ExchangeAdapter):
             # Create new TP order with properly formatted qty and price
             qty_str = format_qty(quantity)
             price_str = format_price(new_tp)
-            logger.info(f"[UPDATE_TP] Creating TP order: qty={qty_str} price={price_str}")
+            print(f"[UPDATE_TP] Creating TP order: qty={qty_str} price={price_str} (raw: {quantity})")
             
             new_order = self.client.create_order(
                 symbol=symbol,
