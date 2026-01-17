@@ -453,6 +453,54 @@ def sync_orders():
             except Exception as e:
                 tlogger.error(f"[ERROR] Sync {order.id} on {exchange_name}: {e}")
 
+def check_cancelled_tp_orders():
+    """Check if TP orders have been cancelled externally on Binance.
+    If a TP is cancelled, remove tp_order_id so the position shows as unprotected.
+    The user can then manually recreate the TP or close the position.
+    """
+    with SessionLocal() as session:
+        # Get executed orders that have a tp_order_id
+        orders_with_tp = session.query(Order).filter(
+            Order.status.in_(['EXECUTED', 'PARTIAL_FILLED']),
+            Order.tp_order_id != None
+        ).all()
+        
+        # Group orders by user and symbol to minimize API calls
+        from collections import defaultdict
+        orders_by_user_symbol = defaultdict(list)
+        for order in orders_with_tp:
+            key = (order.user_id, order.symbol, getattr(order, 'is_testnet', False) or False)
+            orders_by_user_symbol[key].append(order)
+        
+        for (user_id, symbol, is_testnet), user_orders in orders_by_user_symbol.items():
+            try:
+                # Get first order to determine exchange
+                first_order = user_orders[0]
+                exchange_name = get_order_exchange_name(first_order, session)
+                adapter = get_exchange_adapter(user_id, exchange_name, is_testnet)
+                
+                # Get all open orders for this symbol
+                open_orders = adapter.get_open_orders(symbol)
+                open_order_ids = {str(o['orderId']) for o in open_orders}
+                
+                # Check each order's TP
+                for order in user_orders:
+                    if order.tp_order_id and str(order.tp_order_id) not in open_order_ids:
+                        # TP was cancelled externally
+                        tlogger.warning(f"[TP_CANCELLED] Order {order.id} ({order.symbol}): TP order {order.tp_order_id} no longer exists on Binance")
+                        order.tp_order_id = None  # Clear the TP reference
+                        session.commit()
+                        
+                        # Notify via Telegram if possible
+                        try:
+                            from src.telegram_utils import notify_tp_cancelled
+                            notify_tp_cancelled(order)
+                        except:
+                            pass  # Notification is optional
+                        
+            except Exception as e:
+                tlogger.error(f"[TP_CHECK] Error checking TPs for user {user_id}, {symbol}: {e}")
+
 
 def main():
     """Main scheduler loop"""
@@ -486,10 +534,14 @@ def main():
     # Sync with exchanges every 5 minutes
     scheduler.add_job(sync_orders, 'interval', minutes=5, id='sync_exchanges')
     
+    # Check for externally cancelled TP orders every 5 minutes
+    scheduler.add_job(check_cancelled_tp_orders, 'interval', minutes=5, id='check_tp_cancelled')
+    
     tlogger.info("Scheduler jobs registered:")
     tlogger.info("  - auto_execute_pending: every 1 min")
     tlogger.info("  - check_and_execute_stop_loss: every 1 min")
     tlogger.info("  - sync_orders: every 5 min")
+    tlogger.info("  - check_cancelled_tp_orders: every 5 min")
     tlogger.info("")
     tlogger.info("Press CTRL+C to stop")
     
