@@ -216,65 +216,52 @@ class BinanceAdapter(ExchangeAdapter):
         return [{'isBuyer': t.get('isBuyer', True), 'qty': float(t.get('qty', 0)), 'price': float(t.get('price', 0))} for t in trades]
 
 class BybitAdapter(ExchangeAdapter):
-    """Bybit exchange adapter - spot trading"""
+    """Bybit exchange adapter using pybit library - spot trading"""
     
     def __init__(self, api_key: str, secret_key: str, testnet: bool = False):
-        config = {
-            'apiKey': api_key,
-            'secret': secret_key,
-            'enableRateLimit': True,
-            'options': {
-                'defaultType': 'spot',
-            }
-        }
+        from pybit.unified_trading import HTTP
         
-        if testnet:
-            config['sandbox'] = True
-            # Bybit testnet URLs
-            config['urls'] = {
-                'api': {
-                    'public': 'https://api-testnet.bybit.com',
-                    'private': 'https://api-testnet.bybit.com',
-                }
-            }
-        
-        self.client = ccxt.bybit(config)
+        self.session = HTTP(
+            testnet=testnet,
+            api_key=api_key,
+            api_secret=secret_key,
+        )
         self.testnet = testnet
+        self._markets_cache = None
     
     def truncate(self, quantity: float, precision: int) -> float:
         factor = 10 ** precision
         return math.floor(quantity * factor) / factor
     
+    def _format_symbol(self, symbol: str) -> str:
+        """Bybit uses BTCUSDT format (no slash)"""
+        return symbol.replace('/', '')
+    
     def get_symbol_precision(self, symbol: str) -> int:
         """Get quantity precision for a symbol"""
         try:
-            markets = self.client.load_markets()
-            if symbol in markets:
-                return markets[symbol].get('precision', {}).get('amount', 8)
-            # Try with / format (BTC/USDC)
-            formatted = symbol.replace('USDC', '/USDC').replace('USDT', '/USDT')
-            if formatted in markets:
-                return markets[formatted].get('precision', {}).get('amount', 8)
+            formatted = self._format_symbol(symbol)
+            result = self.session.get_instruments_info(category="spot", symbol=formatted)
+            if result['retCode'] == 0 and result['result']['list']:
+                lot_size_filter = result['result']['list'][0].get('lotSizeFilter', {})
+                base_precision = lot_size_filter.get('basePrecision', '0.00000001')
+                # Count decimal places
+                if '.' in base_precision:
+                    return len(base_precision.split('.')[1].rstrip('0'))
+                return 8
         except:
             pass
         return 8  # fallback
     
-    def _format_symbol(self, symbol: str) -> str:
-        """Convert BTCUSDC to BTC/USDC format for ccxt"""
-        for quote in ['USDC', 'USDT']:
-            if symbol.endswith(quote):
-                base = symbol[:-len(quote)]
-                return f"{base}/{quote}"
-        return symbol
-    
     def get_balance(self, asset: str) -> float:
-        """Get total balance (free + used) for an asset"""
+        """Get total balance for an asset"""
         try:
-            bal = self.client.fetch_balance()
-            if asset in bal:
-                free = float(bal[asset].get('free', 0.0))
-                used = float(bal[asset].get('used', 0.0))
-                return free + used
+            result = self.session.get_wallet_balance(accountType="UNIFIED")
+            if result['retCode'] == 0:
+                coins = result['result']['list'][0].get('coin', [])
+                for coin in coins:
+                    if coin['coin'] == asset:
+                        return float(coin.get('walletBalance', 0))
             return 0.0
         except Exception as e:
             print(f"Bybit get_balance error: {e}")
@@ -284,39 +271,62 @@ class BybitAdapter(ExchangeAdapter):
         """Get current price for a symbol"""
         try:
             formatted = self._format_symbol(symbol)
-            ticker = self.client.fetch_ticker(formatted)
-            return float(ticker.get('last', 0))
+            result = self.session.get_tickers(category="spot", symbol=formatted)
+            if result['retCode'] == 0 and result['result']['list']:
+                return float(result['result']['list'][0].get('lastPrice', 0))
+            return 0.0
         except Exception as e:
             print(f"Bybit get_symbol_price error: {e}")
             return 0.0
     
     def place_order(self, symbol: str, side: str, type_: str, quantity: float, price: float = None):
+        """Place a spot order"""
         formatted = self._format_symbol(symbol)
-        order_type = type_.lower()
-        order_side = side.lower()
+        order_type = "Market" if type_.lower() == 'market' else "Limit"
+        order_side = side.capitalize()
         
-        if order_type == 'market':
-            return self.client.create_market_order(formatted, order_side, quantity)
-        else:
-            return self.client.create_limit_order(formatted, order_side, quantity, price)
+        params = {
+            "category": "spot",
+            "symbol": formatted,
+            "side": order_side,
+            "orderType": order_type,
+            "qty": str(quantity),
+        }
+        
+        if order_type == "Limit" and price:
+            params["price"] = str(price)
+            params["timeInForce"] = "GTC"
+        
+        result = self.session.place_order(**params)
+        if result['retCode'] != 0:
+            raise Exception(f"Bybit order failed: {result['retMsg']}")
+        return result['result']
     
     def cancel_order(self, symbol: str, order_id):
+        """Cancel an order"""
         formatted = self._format_symbol(symbol)
-        return self.client.cancel_order(order_id, formatted)
+        result = self.session.cancel_order(
+            category="spot",
+            symbol=formatted,
+            orderId=str(order_id)
+        )
+        if result['retCode'] != 0:
+            raise Exception(f"Bybit cancel failed: {result['retMsg']}")
+        return result['result']
     
     def close_position_market(self, symbol: str, quantity: float):
         """Close a spot position by selling at market"""
         try:
             precision = self.get_symbol_precision(symbol)
             truncated_qty = self.truncate(float(quantity) * 0.999, precision)
-            formatted = self._format_symbol(symbol)
             
-            order = self.client.create_market_order(
-                formatted,
-                'sell',
-                truncated_qty
+            result = self.place_order(
+                symbol=symbol,
+                side='Sell',
+                type_='market',
+                quantity=truncated_qty
             )
-            return order
+            return result
         except Exception as e:
             print(f"Bybit close_position_market error: {e}")
             raise
@@ -336,37 +346,36 @@ class BybitAdapter(ExchangeAdapter):
             
             # Cancel existing TP order
             if tp_order_id:
-                # Best case: we know the exact order ID
                 logger.info(f"[BYBIT UPDATE_TP] Cancelling TP order by ID: {tp_order_id}")
                 try:
-                    self.client.cancel_order(tp_order_id, formatted)
+                    self.cancel_order(symbol, tp_order_id)
                     logger.info(f"[BYBIT UPDATE_TP] Cancelled order {tp_order_id}")
                 except Exception as e:
                     logger.warning(f"[BYBIT UPDATE_TP] Could not cancel order {tp_order_id}: {e}")
             elif old_tp:
-                # Fallback: find by price
                 logger.info(f"[BYBIT UPDATE_TP] No tp_order_id, searching by price={old_tp}")
-                open_orders = self.client.fetch_open_orders(formatted)
+                open_orders = self.get_open_orders(symbol)
                 for order in open_orders:
-                    if order['side'].lower() == 'sell':
+                    if order['side'].upper() == 'SELL':
                         order_price = float(order['price'])
                         if abs(order_price - float(old_tp)) < 0.01:
-                            logger.info(f"[BYBIT UPDATE_TP] Found matching order {order['id']}, cancelling")
-                            self.client.cancel_order(order['id'], formatted)
+                            logger.info(f"[BYBIT UPDATE_TP] Found matching order {order['orderId']}, cancelling")
+                            self.cancel_order(symbol, order['orderId'])
                             break
             
             # Place new TP limit order
             precision = self.get_symbol_precision(symbol)
             truncated_qty = self.truncate(float(quantity), precision)
             
-            new_order = self.client.create_limit_order(
-                formatted,
-                'sell',
-                truncated_qty,
-                new_tp
+            new_order = self.place_order(
+                symbol=symbol,
+                side='Sell',
+                type_='limit',
+                quantity=truncated_qty,
+                price=new_tp
             )
             
-            new_tp_order_id = str(new_order.get('id', ''))
+            new_tp_order_id = str(new_order.get('orderId', ''))
             logger.info(f"[BYBIT UPDATE_TP] Created new TP order {new_tp_order_id} @ {new_tp}")
             
             return new_tp_order_id
@@ -376,18 +385,37 @@ class BybitAdapter(ExchangeAdapter):
             raise
     
     def get_open_orders(self, symbol: str) -> list:
-        """Get open orders for a symbol - ccxt format"""
-        formatted = self._format_symbol(symbol)
-        orders = self.client.fetch_open_orders(formatted)
-        # Normalize to same format as Binance
-        return [{'side': o['side'].upper(), 'orderId': o['id'], 'origQty': o['amount'], 'price': o['price']} for o in orders]
+        """Get open orders for a symbol - normalized format"""
+        try:
+            formatted = self._format_symbol(symbol)
+            result = self.session.get_open_orders(category="spot", symbol=formatted)
+            if result['retCode'] == 0:
+                orders = result['result'].get('list', [])
+                return [
+                    {
+                        'side': o['side'].upper(),
+                        'orderId': o['orderId'],
+                        'origQty': float(o['qty']),
+                        'price': float(o['price'])
+                    }
+                    for o in orders
+                ]
+            return []
+        except Exception as e:
+            print(f"Bybit get_open_orders error: {e}")
+            return []
     
     def get_asset_balance_detail(self, asset: str) -> dict:
         """Get detailed balance - returns dict with 'free' and 'locked'"""
         try:
-            bal = self.client.fetch_balance()
-            if asset in bal:
-                return {'free': float(bal[asset].get('free', 0)), 'locked': float(bal[asset].get('used', 0))}
+            result = self.session.get_wallet_balance(accountType="UNIFIED")
+            if result['retCode'] == 0:
+                coins = result['result']['list'][0].get('coin', [])
+                for coin in coins:
+                    if coin['coin'] == asset:
+                        wallet = float(coin.get('walletBalance', 0))
+                        locked = float(coin.get('locked', 0))
+                        return {'free': wallet - locked, 'locked': locked}
             return {'free': 0.0, 'locked': 0.0}
         except Exception as e:
             print(f"Bybit get_asset_balance_detail error: {e}")
@@ -397,8 +425,19 @@ class BybitAdapter(ExchangeAdapter):
         """Get recent trades - normalized format"""
         try:
             formatted = self._format_symbol(symbol)
-            trades = self.client.fetch_my_trades(formatted, limit=limit)
-            return [{'isBuyer': t['side'].lower() == 'buy', 'qty': float(t['amount']), 'price': float(t['price'])} for t in trades]
+            result = self.session.get_executions(category="spot", symbol=formatted, limit=limit)
+            if result['retCode'] == 0:
+                trades = result['result'].get('list', [])
+                return [
+                    {
+                        'isBuyer': t['side'].lower() == 'buy',
+                        'qty': float(t['execQty']),
+                        'price': float(t['execPrice'])
+                    }
+                    for t in trades
+                ]
+            return []
         except Exception as e:
             print(f"Bybit get_recent_trades error: {e}")
             return []
+
