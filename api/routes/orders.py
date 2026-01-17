@@ -757,6 +757,9 @@ async def update_order(
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
     
+    # Save old TP before updating (needed for identifying which exchange order to cancel)
+    old_tp = float(order.take_profit) if order.take_profit else None
+    
     # Update fields
     if order_data.entry_price is not None:
         order.entry_price = Decimal(str(order_data.entry_price))
@@ -829,7 +832,8 @@ async def update_order(
                     float(order.quantity),
                     float(order.take_profit),
                     float(order.stop_loss),
-                    user_id=current_user.id
+                    user_id=current_user.id,
+                    old_tp=old_tp
                 )
             except Exception as e:
                 raise HTTPException(status_code=400, detail=f"Failed to update on exchange: {str(e)}")
