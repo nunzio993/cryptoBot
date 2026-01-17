@@ -769,14 +769,16 @@ async def update_order(
     
     # If EXECUTED, update on exchange too
     if order.status == "EXECUTED" and (order_data.take_profit or order_data.stop_loss):
-        # Get exchange from order's api_key, not hardcoded binance
-        if order.api_key_id:
-            key = db.query(APIKey).filter(
-                APIKey.id == order.api_key_id,
-                APIKey.user_id == current_user.id
+        # Get exchange from order's exchange_id
+        if order.exchange_id:
+            exchange = db.query(Exchange).filter_by(id=order.exchange_id).first()
+            key = db.query(APIKey).filter_by(
+                user_id=current_user.id,
+                exchange_id=order.exchange_id,
+                is_testnet=order.is_testnet if order.is_testnet is not None else (network_mode == "Testnet")
             ).first()
         else:
-            # Fallback for old orders without api_key_id
+            # Fallback for old orders without exchange_id
             exchange = db.query(Exchange).filter_by(name="binance").first()
             key = db.query(APIKey).filter_by(
                 user_id=current_user.id,
