@@ -623,7 +623,8 @@ async def create_order(
         pending_orders = db.query(Order).filter(
             Order.user_id == current_user.id,
             Order.status == "PENDING",
-            Order.api_key_id == key.id
+            Order.exchange_id == exchange.id,
+            Order.is_testnet == (network_mode == "Testnet")
         ).all()
         blocked_usdc = sum(float(o.quantity) * float(o.max_entry or o.entry_price) for o in pending_orders)
         
