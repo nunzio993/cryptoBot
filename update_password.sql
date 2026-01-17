@@ -1,1 +1,0 @@
-UPDATE users SET password_hash = 'scrypt:32768:8:1$nM7UP0bjCLWv1UgI$75ceab2daebf20b2a995c47eddf407ec426ff77db8f4f64761e50a0b7fd13eddc05b61d6efc1bf47dfe270bf61a2576f18a542b690bb5cb57e88f038c06c991f' WHERE username = 'Admin';
