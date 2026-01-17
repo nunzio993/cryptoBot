@@ -114,15 +114,15 @@ export default function DashboardPage() {
                             <AlertTriangle className="w-6 h-6 text-amber-500" />
                         </div>
                         <div>
-                            <h3 className="font-semibold text-lg text-amber-500">API Keys non configurate</h3>
+                            <h3 className="font-semibold text-lg text-amber-500">API Keys Not Configured</h3>
                             <p className="text-muted-foreground mt-1">
-                                Per visualizzare il tuo portfolio e iniziare a fare trading, devi prima configurare le tue API keys.
+                                To view your portfolio and start trading, you need to configure your API keys first.
                             </p>
                             <a
-                                href="/dashboard/settings"
+                                href="/dashboard/apikeys"
                                 className="inline-flex items-center gap-2 mt-3 px-4 py-2 bg-amber-500 text-black font-medium rounded-xl hover:bg-amber-400 transition-colors"
                             >
-                                Vai a Impostazioni → API Keys
+                                Go to API Keys
                                 <ArrowUpRight className="w-4 h-4" />
                             </a>
                         </div>

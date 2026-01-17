@@ -97,16 +97,16 @@ export default function APIKeysPage() {
                         <Key className="w-5 h-5 text-amber-500" />
                     </div>
                     <div>
-                        <h3 className="font-semibold text-amber-500">⚠️ Importante: Sicurezza API Keys</h3>
+                        <h3 className="font-semibold text-amber-500">⚠️ Important: API Key Security</h3>
                         <ul className="text-sm text-muted-foreground mt-2 space-y-1">
-                            <li>• Le API keys devono essere abilitate <strong>SOLO per il trading</strong></li>
-                            <li>• <strong>NON abilitare</strong> permessi di deposito, ritiro o trasferimento</li>
-                            <li>• Attiva la <strong>whitelist IP</strong> se l'exchange lo supporta</li>
-                            <li>• Le tue chiavi sono criptate e archiviate in modo sicuro</li>
+                            <li>• API keys must be enabled <strong>ONLY for trading</strong></li>
+                            <li>• <strong>DO NOT enable</strong> deposit, withdrawal, or transfer permissions</li>
+                            <li>• Enable <strong>IP whitelist</strong> if your exchange supports it</li>
+                            <li>• Your keys are encrypted and stored securely</li>
                         </ul>
                         <p className="text-xs text-muted-foreground mt-3 italic">
-                            CryptoBot non è responsabile per perdite derivanti da configurazioni errate delle API keys
-                            o da permessi eccessivi concessi alle stesse.
+                            CryptoBot is not responsible for losses resulting from incorrect API key configurations
+                            or excessive permissions granted to them.
                         </p>
                     </div>
                 </div>
