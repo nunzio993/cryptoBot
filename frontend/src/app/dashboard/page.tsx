@@ -32,7 +32,7 @@ export default function DashboardPage() {
     const [activeTab, setActiveTab] = useState<"executed" | "pending">("executed");
 
     // Fetch API keys to set default if none selected
-    const { data: apiKeys = [] } = useQuery({
+    const { data: apiKeys = [], isLoading: isLoadingKeys } = useQuery({
         queryKey: ["apiKeys"],
         queryFn: () => apiKeysApi.list().then((res) => res.data),
     });
@@ -107,7 +107,7 @@ export default function DashboardPage() {
             </div>
 
             {/* No API Keys Warning */}
-            {apiKeys.length === 0 && (
+            {!isLoadingKeys && apiKeys.length === 0 && (
                 <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-6">
                     <div className="flex items-start gap-4">
                         <div className="w-12 h-12 rounded-xl bg-amber-500/20 flex items-center justify-center flex-shrink-0">
