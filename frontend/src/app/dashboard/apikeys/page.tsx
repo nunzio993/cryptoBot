@@ -90,6 +90,28 @@ export default function APIKeysPage() {
                 </button>
             </div>
 
+            {/* Security Disclaimer */}
+            <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-5">
+                <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center flex-shrink-0">
+                        <Key className="w-5 h-5 text-amber-500" />
+                    </div>
+                    <div>
+                        <h3 className="font-semibold text-amber-500">⚠️ Importante: Sicurezza API Keys</h3>
+                        <ul className="text-sm text-muted-foreground mt-2 space-y-1">
+                            <li>• Le API keys devono essere abilitate <strong>SOLO per il trading</strong></li>
+                            <li>• <strong>NON abilitare</strong> permessi di deposito, ritiro o trasferimento</li>
+                            <li>• Attiva la <strong>whitelist IP</strong> se l'exchange lo supporta</li>
+                            <li>• Le tue chiavi sono criptate e archiviate in modo sicuro</li>
+                        </ul>
+                        <p className="text-xs text-muted-foreground mt-3 italic">
+                            CryptoBot non è responsabile per perdite derivanti da configurazioni errate delle API keys
+                            o da permessi eccessivi concessi alle stesse.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
             {/* Add Form */}
             {showForm && (
                 <div className="bg-card rounded-2xl border border-border p-6 animate-fadeIn">
