@@ -321,51 +321,59 @@ class BybitAdapter(ExchangeAdapter):
             print(f"Bybit close_position_market error: {e}")
             raise
     
-    def update_spot_tp_sl(self, symbol: str, quantity: float, new_tp: float, new_sl: float, user_id: int = None):
-        """Update TP/SL for a spot position"""
-        with SessionLocal() as session:
-            try:
-                formatted = self._format_symbol(symbol)
-                
-                # Cancel existing open orders for this symbol
+    def update_spot_tp_sl(self, symbol: str, quantity: float, new_tp: float, new_sl: float, user_id: int = None, old_tp: float = None, tp_order_id: str = None):
+        """
+        Update TP/SL for a spot position.
+        tp_order_id: If provided, directly cancel this order ID (most accurate)
+        old_tp: Fallback - used to identify the specific order to cancel by price
+        Returns: new tp_order_id
+        """
+        import logging
+        logger = logging.getLogger('bybit_adapter')
+        
+        try:
+            formatted = self._format_symbol(symbol)
+            
+            # Cancel existing TP order
+            if tp_order_id:
+                # Best case: we know the exact order ID
+                logger.info(f"[BYBIT UPDATE_TP] Cancelling TP order by ID: {tp_order_id}")
+                try:
+                    self.client.cancel_order(tp_order_id, formatted)
+                    logger.info(f"[BYBIT UPDATE_TP] Cancelled order {tp_order_id}")
+                except Exception as e:
+                    logger.warning(f"[BYBIT UPDATE_TP] Could not cancel order {tp_order_id}: {e}")
+            elif old_tp:
+                # Fallback: find by price
+                logger.info(f"[BYBIT UPDATE_TP] No tp_order_id, searching by price={old_tp}")
                 open_orders = self.client.fetch_open_orders(formatted)
                 for order in open_orders:
-                    if order['side'] == 'sell':
-                        try:
+                    if order['side'].lower() == 'sell':
+                        order_price = float(order['price'])
+                        if abs(order_price - float(old_tp)) < 0.01:
+                            logger.info(f"[BYBIT UPDATE_TP] Found matching order {order['id']}, cancelling")
                             self.client.cancel_order(order['id'], formatted)
-                        except:
-                            pass
-                
-                # Place new TP limit order
-                precision = self.get_symbol_precision(symbol)
-                truncated_qty = self.truncate(float(quantity), precision)
-                
-                self.client.create_limit_order(
-                    formatted,
-                    'sell',
-                    truncated_qty,
-                    new_tp
-                )
-                
-                # Update order in database
-                order_query = session.query(Order).filter(
-                    Order.symbol == symbol,
-                    Order.quantity == quantity,
-                    Order.status == "EXECUTED"
-                )
-                if user_id:
-                    order_query = order_query.filter(Order.user_id == user_id)
-                order = order_query.order_by(Order.executed_at.desc()).first()
-                
-                if order:
-                    order.take_profit = new_tp
-                    order.stop_loss = new_sl
-                    session.commit()
-                
-                return True
-            except Exception as e:
-                print(f"Bybit update_spot_tp_sl error: {e}")
-                raise
+                            break
+            
+            # Place new TP limit order
+            precision = self.get_symbol_precision(symbol)
+            truncated_qty = self.truncate(float(quantity), precision)
+            
+            new_order = self.client.create_limit_order(
+                formatted,
+                'sell',
+                truncated_qty,
+                new_tp
+            )
+            
+            new_tp_order_id = str(new_order.get('id', ''))
+            logger.info(f"[BYBIT UPDATE_TP] Created new TP order {new_tp_order_id} @ {new_tp}")
+            
+            return new_tp_order_id
+            
+        except Exception as e:
+            print(f"Bybit update_spot_tp_sl error: {e}")
+            raise
     
     def get_open_orders(self, symbol: str) -> list:
         """Get open orders for a symbol - ccxt format"""
