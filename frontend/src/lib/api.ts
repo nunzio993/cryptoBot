@@ -148,6 +148,14 @@ export const ordersApi = {
 
     close: (id: number, networkMode: string = "Testnet") =>
         api.post(`/orders/${id}/close`, null, { params: { network_mode: networkMode } }),
+
+    split: (id: number, data: {
+        split_quantity: number;
+        tp1: number;
+        sl1: number;
+        tp2: number;
+        sl2: number;
+    }) => api.post(`/orders/${id}/split`, data),
 };
 
 export const exchangeApi = {

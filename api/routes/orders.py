@@ -923,3 +923,110 @@ async def close_order(
     
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to close order: {str(e)}")
+
+
+# ===== SPLIT ORDER =====
+
+class SplitOrderRequest(BaseModel):
+    split_quantity: float  # Quantity for the first part
+    tp1: float  # Take profit for first part
+    sl1: float  # Stop loss for first part
+    tp2: float  # Take profit for second part
+    sl2: float  # Stop loss for second part
+
+
+@router.post("/{order_id}/split")
+async def split_order(
+    order_id: int,
+    split_data: SplitOrderRequest,
+    current_user: User = Depends(get_current_user),
+    db=Depends(get_db)
+):
+    """
+    Split an executed order into two orders with different TP/SL.
+    This is managed only in the app database, no exchange operations.
+    The original order becomes the first part, a new order is created for the second part.
+    """
+    # Find the original order
+    order = db.query(Order).filter(
+        Order.id == order_id,
+        Order.user_id == current_user.id
+    ).first()
+    
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    
+    if order.status not in ["EXECUTED", "PARTIAL_FILLED"]:
+        raise HTTPException(status_code=400, detail="Can only split executed orders")
+    
+    original_qty = float(order.quantity)
+    split_qty = split_data.split_quantity
+    
+    # Validate split quantity
+    if split_qty <= 0 or split_qty >= original_qty:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Split quantity must be between 0 and {original_qty}"
+        )
+    
+    remaining_qty = original_qty - split_qty
+    
+    # Validate TP/SL for part 1
+    entry_price = float(order.entry_price or order.executed_price or 0)
+    if not (split_data.sl1 < entry_price < split_data.tp1):
+        raise HTTPException(status_code=400, detail="Part 1: Stop Loss must be < Entry < Take Profit")
+    if not (split_data.sl2 < entry_price < split_data.tp2):
+        raise HTTPException(status_code=400, detail="Part 2: Stop Loss must be < Entry < Take Profit")
+    
+    # Update original order (becomes part 1)
+    order.quantity = Decimal(str(split_qty))
+    order.take_profit = Decimal(str(split_data.tp1))
+    order.stop_loss = Decimal(str(split_data.sl1))
+    
+    # Create new order for part 2
+    new_order = Order(
+        user_id=current_user.id,
+        exchange_id=order.exchange_id,
+        symbol=order.symbol,
+        side=order.side,
+        quantity=Decimal(str(remaining_qty)),
+        status=order.status,
+        entry_price=order.entry_price,
+        max_entry=order.max_entry,
+        take_profit=Decimal(str(split_data.tp2)),
+        stop_loss=Decimal(str(split_data.sl2)),
+        entry_interval=order.entry_interval,
+        stop_interval=order.stop_interval,
+        executed_price=order.executed_price,
+        executed_at=order.executed_at,
+        created_at=datetime.now(timezone.utc),
+        is_testnet=order.is_testnet
+    )
+    
+    db.add(new_order)
+    db.commit()
+    db.refresh(order)
+    db.refresh(new_order)
+    
+    # Broadcast WebSocket updates
+    from api.websocket_manager import manager
+    await manager.broadcast_order_update(current_user.id, order_id, order.status)
+    await manager.broadcast_order_update(current_user.id, new_order.id, new_order.status)
+    await manager.broadcast_portfolio_update(current_user.id)
+    
+    return {
+        "message": "Order split successfully",
+        "part1": {
+            "id": order.id,
+            "quantity": float(order.quantity),
+            "take_profit": float(order.take_profit),
+            "stop_loss": float(order.stop_loss)
+        },
+        "part2": {
+            "id": new_order.id,
+            "quantity": float(new_order.quantity),
+            "take_profit": float(new_order.take_profit),
+            "stop_loss": float(new_order.stop_loss)
+        }
+    }
+
