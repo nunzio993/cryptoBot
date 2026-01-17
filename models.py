@@ -88,6 +88,7 @@ class Order(Base):
     closed_at      = Column(DateTime(timezone=True), nullable=True)
     created_at     = Column(DateTime(timezone=True), server_default=func.now())
     is_testnet     = Column(Boolean, default=False, nullable=False)
+    tp_order_id    = Column(String, nullable=True)  # Binance TP order ID for accurate cancellation
 
     user = relationship("User", back_populates="orders")
     exchange = relationship("Exchange")
