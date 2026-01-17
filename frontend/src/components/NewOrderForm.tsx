@@ -27,6 +27,7 @@ export function NewOrderForm({ networkMode, apiKeyId, onSuccess }: NewOrderFormP
     });
     const [error, setError] = useState("");
     const [loadingPrice, setLoadingPrice] = useState(false);
+    const [usdcPercent, setUsdcPercent] = useState(100);
 
     // Fetch symbols
     const { data: symbols = [] } = useQuery({
@@ -72,7 +73,7 @@ export function NewOrderForm({ networkMode, apiKeyId, onSuccess }: NewOrderFormP
         try {
             const response = await exchangeApi.price(symbol, networkMode);
             const currentPrice = response.data.price;
-            const maxEntry = currentPrice * 1.03; // 3% higher
+            const maxEntry = currentPrice * 1.01; // 1% higher
 
             setFormData(prev => ({
                 ...prev,
@@ -191,6 +192,38 @@ export function NewOrderForm({ networkMode, apiKeyId, onSuccess }: NewOrderFormP
                             placeholder="0.00"
                             step="0.0001"
                         />
+                        {/* USDC Percentage Slider */}
+                        {portfolio && formData.max_entry && (
+                            <div className="mt-3">
+                                <div className="flex justify-between text-xs text-muted-foreground mb-1">
+                                    <span>Use {usdcPercent}% of available USDC</span>
+                                    <span>{formatCurrency((portfolio.usdc_available * usdcPercent / 100))} USDC</span>
+                                </div>
+                                <input
+                                    type="range"
+                                    min="10"
+                                    max="100"
+                                    step="10"
+                                    value={usdcPercent}
+                                    onChange={(e) => {
+                                        const percent = parseInt(e.target.value);
+                                        setUsdcPercent(percent);
+                                        const maxEntryPrice = parseFloat(formData.max_entry);
+                                        if (maxEntryPrice > 0) {
+                                            const usdcToUse = portfolio.usdc_available * percent / 100;
+                                            const newQuantity = (usdcToUse / maxEntryPrice).toFixed(4);
+                                            setFormData(prev => ({ ...prev, quantity: newQuantity }));
+                                        }
+                                    }}
+                                    className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
+                                />
+                                <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                                    <span>10%</span>
+                                    <span>50%</span>
+                                    <span>100%</span>
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     {/* Entry Price */}
@@ -211,7 +244,7 @@ export function NewOrderForm({ networkMode, apiKeyId, onSuccess }: NewOrderFormP
                     {/* Max Entry */}
                     <div>
                         <label className="block text-sm font-medium text-muted-foreground mb-2">
-                            Max Entry (+3%)
+                            Max Entry (+1%)
                         </label>
                         <input
                             type="number"
@@ -266,11 +299,11 @@ export function NewOrderForm({ networkMode, apiKeyId, onSuccess }: NewOrderFormP
                                 formData.entry_interval === "Market" && "border-amber-500/50"
                             )}
                         >
-                            <option value="Market">🚀 Market (Immediato)</option>
-                            <option value="M5">M5 (5 minuti)</option>
-                            <option value="H1">H1 (1 ora)</option>
-                            <option value="H4">H4 (4 ore)</option>
-                            <option value="Daily">Daily (Giornaliero)</option>
+                            <option value="Market">🚀 Market (Immediate)</option>
+                            <option value="M5">M5 (5 minutes)</option>
+                            <option value="H1">H1 (1 hour)</option>
+                            <option value="H4">H4 (4 hours)</option>
+                            <option value="Daily">Daily</option>
                         </select>
                     </div>
 
@@ -309,7 +342,7 @@ export function NewOrderForm({ networkMode, apiKeyId, onSuccess }: NewOrderFormP
                     <div className="flex items-center gap-3 p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-500">
                         <AlertTriangle className="w-5 h-5 flex-shrink-0" />
                         <p className="text-sm">
-                            <strong>Ordine Market:</strong> verrà eseguito immediatamente al prezzo di mercato corrente.
+                            <strong>Market Order:</strong> Will be executed immediately at current market price.
                         </p>
                     </div>
                 )}
