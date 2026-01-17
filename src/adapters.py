@@ -530,10 +530,12 @@ class BybitAdapter(ExchangeAdapter):
             result = self.session.get_wallet_balance(accountType="UNIFIED")
             if result['retCode'] == 0:
                 coins = result['result']['list'][0].get('coin', [])
-                balances = [
-                    {'asset': c['coin'], 'free': c.get('availableToWithdraw', '0'), 'locked': c.get('locked', '0')}
-                    for c in coins
-                ]
+                balances = []
+                for c in coins:
+                    wallet = c.get('walletBalance', '0') or '0'
+                    locked = c.get('locked', '0') or '0'
+                    free = str(float(wallet) - float(locked))
+                    balances.append({'asset': c['coin'], 'free': free, 'locked': locked})
                 return {'balances': balances}
             return {'balances': []}
         except Exception as e:
