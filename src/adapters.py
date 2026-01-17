@@ -214,6 +214,37 @@ class BinanceAdapter(ExchangeAdapter):
         """Get recent trades - normalized format"""
         trades = self.client.get_my_trades(symbol=symbol, limit=limit)
         return [{'isBuyer': t.get('isBuyer', True), 'qty': float(t.get('qty', 0)), 'price': float(t.get('price', 0))} for t in trades]
+    
+    # === Wrapper methods for uniform interface ===
+    
+    def get_symbol_info(self, symbol: str) -> dict:
+        """Get symbol info - normalized format"""
+        return self.client.get_symbol_info(symbol)
+    
+    def get_all_tickers(self) -> list:
+        """Get all tickers"""
+        return self.client.get_all_tickers()
+    
+    def get_account(self) -> dict:
+        """Get account info"""
+        return self.client.get_account()
+    
+    def get_asset_balance(self, asset: str) -> dict:
+        """Get asset balance - returns dict with 'free' and 'locked'"""
+        return self.client.get_asset_balance(asset=asset)
+    
+    def order_market_buy(self, symbol: str, quantity: float) -> dict:
+        """Place a market buy order"""
+        qty_str = ('{:.8f}'.format(quantity)).rstrip('0').rstrip('.')
+        return self.client.order_market_buy(symbol=symbol, quantity=qty_str)
+    
+    def get_symbol_ticker(self, symbol: str) -> dict:
+        """Get symbol ticker"""
+        return self.client.get_symbol_ticker(symbol=symbol)
+    
+    def get_klines(self, symbol: str, interval: str, limit: int = 2) -> list:
+        """Get klines/candlesticks"""
+        return self.client.get_klines(symbol=symbol, interval=interval, limit=limit)
 
 class BybitAdapter(ExchangeAdapter):
     """Bybit exchange adapter using pybit library - spot trading"""
@@ -228,6 +259,10 @@ class BybitAdapter(ExchangeAdapter):
         )
         self.testnet = testnet
         self._markets_cache = None
+        
+        # For backward compatibility with code that calls adapter.client.method()
+        # The adapter itself provides the same interface
+        self.client = self
     
     def truncate(self, quantity: float, precision: int) -> float:
         factor = 10 ** precision
@@ -440,4 +475,143 @@ class BybitAdapter(ExchangeAdapter):
         except Exception as e:
             print(f"Bybit get_recent_trades error: {e}")
             return []
-
+    
+    # === Wrapper methods for uniform interface ===
+    
+    def get_symbol_info(self, symbol: str) -> dict:
+        """Get symbol info - normalized to Binance format"""
+        try:
+            formatted = self._format_symbol(symbol)
+            result = self.session.get_instruments_info(category="spot", symbol=formatted)
+            if result['retCode'] == 0 and result['result']['list']:
+                info = result['result']['list'][0]
+                # Normalize to Binance format
+                return {
+                    'symbol': symbol,
+                    'status': 'TRADING' if info.get('status') == 'Trading' else info.get('status'),
+                    'filters': [
+                        {
+                            'filterType': 'LOT_SIZE',
+                            'stepSize': info.get('lotSizeFilter', {}).get('basePrecision', '0.00000001'),
+                            'minQty': info.get('lotSizeFilter', {}).get('minOrderQty', '0.00000001'),
+                        },
+                        {
+                            'filterType': 'PRICE_FILTER',
+                            'tickSize': info.get('priceFilter', {}).get('tickSize', '0.01'),
+                        },
+                        {
+                            'filterType': 'NOTIONAL',
+                            'minNotional': info.get('lotSizeFilter', {}).get('minOrderAmt', '1'),
+                        }
+                    ]
+                }
+            return {'symbol': symbol, 'filters': []}
+        except Exception as e:
+            print(f"Bybit get_symbol_info error: {e}")
+            return {'symbol': symbol, 'filters': []}
+    
+    def get_all_tickers(self) -> list:
+        """Get all tickers - normalized to Binance format"""
+        try:
+            result = self.session.get_tickers(category="spot")
+            if result['retCode'] == 0:
+                return [
+                    {'symbol': t['symbol'], 'price': t['lastPrice']}
+                    for t in result['result'].get('list', [])
+                ]
+            return []
+        except Exception as e:
+            print(f"Bybit get_all_tickers error: {e}")
+            return []
+    
+    def get_account(self) -> dict:
+        """Get account info - normalized to Binance format"""
+        try:
+            result = self.session.get_wallet_balance(accountType="UNIFIED")
+            if result['retCode'] == 0:
+                coins = result['result']['list'][0].get('coin', [])
+                balances = [
+                    {'asset': c['coin'], 'free': c.get('availableToWithdraw', '0'), 'locked': c.get('locked', '0')}
+                    for c in coins
+                ]
+                return {'balances': balances}
+            return {'balances': []}
+        except Exception as e:
+            print(f"Bybit get_account error: {e}")
+            return {'balances': []}
+    
+    def get_asset_balance(self, asset: str) -> dict:
+        """Get asset balance - returns dict with 'free' and 'locked'"""
+        try:
+            result = self.session.get_wallet_balance(accountType="UNIFIED")
+            if result['retCode'] == 0:
+                coins = result['result']['list'][0].get('coin', [])
+                for coin in coins:
+                    if coin['coin'] == asset:
+                        wallet = float(coin.get('walletBalance', 0))
+                        locked = float(coin.get('locked', 0))
+                        return {'free': str(wallet - locked), 'locked': str(locked)}
+            return {'free': '0', 'locked': '0'}
+        except Exception as e:
+            print(f"Bybit get_asset_balance error: {e}")
+            return {'free': '0', 'locked': '0'}
+    
+    def order_market_buy(self, symbol: str, quantity: float) -> dict:
+        """Place a market buy order"""
+        return self.place_order(symbol=symbol, side='Buy', type_='market', quantity=quantity)
+    
+    def get_symbol_ticker(self, symbol: str) -> dict:
+        """Get symbol ticker - normalized to Binance format"""
+        try:
+            formatted = self._format_symbol(symbol)
+            result = self.session.get_tickers(category="spot", symbol=formatted)
+            if result['retCode'] == 0 and result['result']['list']:
+                ticker = result['result']['list'][0]
+                return {'symbol': symbol, 'price': ticker.get('lastPrice', '0')}
+            return {'symbol': symbol, 'price': '0'}
+        except Exception as e:
+            print(f"Bybit get_symbol_ticker error: {e}")
+            return {'symbol': symbol, 'price': '0'}
+    
+    def get_klines(self, symbol: str, interval: str, limit: int = 2) -> list:
+        """Get klines/candlesticks - normalized to Binance format"""
+        try:
+            formatted = self._format_symbol(symbol)
+            # Map Binance interval to Bybit interval
+            interval_map = {
+                '1m': '1', '3m': '3', '5m': '5', '15m': '15', '30m': '30',
+                '1h': '60', '2h': '120', '4h': '240', '6h': '360', '12h': '720',
+                '1d': 'D', '1w': 'W', '1M': 'M'
+            }
+            bybit_interval = interval_map.get(interval, '60')
+            
+            result = self.session.get_kline(
+                category="spot",
+                symbol=formatted,
+                interval=bybit_interval,
+                limit=limit
+            )
+            if result['retCode'] == 0:
+                # Bybit returns [startTime, open, high, low, close, volume, turnover]
+                # Binance returns [openTime, open, high, low, close, volume, closeTime, ...]
+                klines = []
+                for k in result['result'].get('list', []):
+                    klines.append([
+                        int(k[0]),  # openTime
+                        k[1],       # open
+                        k[2],       # high
+                        k[3],       # low
+                        k[4],       # close
+                        k[5],       # volume
+                        int(k[0]) + 60000,  # closeTime (estimated)
+                        k[6],       # quoteAssetVolume
+                        0,          # numberOfTrades
+                        '0',        # takerBuyBaseAssetVolume
+                        '0',        # takerBuyQuoteAssetVolume
+                        '0'         # ignore
+                    ])
+                return klines
+            return []
+        except Exception as e:
+            print(f"Bybit get_klines error: {e}")
+            return []
