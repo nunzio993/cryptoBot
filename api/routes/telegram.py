@@ -101,3 +101,36 @@ async def toggle_subscription(
     sub.enabled = not sub.enabled
     db.commit()
     return {"enabled": sub.enabled}
+
+
+@router.post("/test")
+async def test_notification(
+    current_user: User = Depends(get_current_user),
+    db=Depends(get_db)
+):
+    """Send a test notification to verify Telegram is working"""
+    from src.telegram_notifications import _send_message_sync, get_user_chat_ids
+    from telegram.constants import ParseMode
+    
+    chat_ids = get_user_chat_ids(current_user.id)
+    
+    if not chat_ids:
+        raise HTTPException(status_code=400, detail="No Telegram chat linked to your account")
+    
+    test_msg = (
+        "🧪 *Test Notification*\n"
+        "━━━━━━━━━━━━━━━━━━\n"
+        f"✅ Telegram è configurato correttamente!\n"
+        f"👤 User: `{current_user.username}`\n"
+        f"🆔 User ID: `{current_user.id}`\n"
+    )
+    
+    sent_count = 0
+    for chat_id in chat_ids:
+        try:
+            _send_message_sync(chat_id, test_msg, parse_mode=ParseMode.MARKDOWN)
+            sent_count += 1
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to send: {str(e)}")
+    
+    return {"message": f"Test notification sent to {sent_count} chat(s)"}
