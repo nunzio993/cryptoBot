@@ -105,6 +105,15 @@ export default function OrdersPage() {
         },
     });
 
+    const splitMutation = useMutation({
+        mutationFn: ({ id, data }: { id: number; data: { split_quantity: number; tp1: number; sl1: number; tp2: number; sl2: number } }) =>
+            ordersApi.split(id, data),
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["orders"] });
+            queryClient.invalidateQueries({ queryKey: ["portfolio"] });
+        },
+    });
+
     const handleUpdate = async (id: number, data: Partial<Order>) => {
         await updateMutation.mutateAsync({ id, data });
     };
@@ -119,6 +128,10 @@ export default function OrdersPage() {
         if (confirm("Are you sure you want to close this position?")) {
             await closeMutation.mutateAsync(id);
         }
+    };
+
+    const handleSplit = async (id: number, data: { split_quantity: number; tp1: number; sl1: number; tp2: number; sl2: number }) => {
+        await splitMutation.mutateAsync({ id, data });
     };
 
     const tabs = [
@@ -217,6 +230,7 @@ export default function OrdersPage() {
                     onUpdate={handleUpdate}
                     onCancel={handleCancel}
                     onClose={handleClose}
+                    onSplit={handleSplit}
                     isLoading={currentLoading}
                 />
             </div>

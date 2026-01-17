@@ -2,7 +2,7 @@
 
 import { formatCurrency, formatDate, cn } from "@/lib/utils";
 import { type Order } from "@/lib/api";
-import { Loader2, Save, X, ArrowUpDown } from "lucide-react";
+import { Loader2, Save, X, ArrowUpDown, Scissors } from "lucide-react";
 import { useState } from "react";
 
 interface OrdersTableProps {
@@ -11,6 +11,7 @@ interface OrdersTableProps {
     onUpdate?: (id: number, data: Partial<Order>) => Promise<void>;
     onCancel?: (id: number) => Promise<void>;
     onClose?: (id: number) => Promise<void>;
+    onSplit?: (id: number, data: { split_quantity: number; tp1: number; sl1: number; tp2: number; sl2: number }) => Promise<void>;
     isLoading?: boolean;
 }
 
@@ -20,12 +21,25 @@ export function OrdersTable({
     onUpdate,
     onCancel,
     onClose,
+    onSplit,
     isLoading,
 }: OrdersTableProps) {
     const [editingId, setEditingId] = useState<number | null>(null);
     const [editValues, setEditValues] = useState<Partial<Order>>({});
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
+
+    // Split modal state
+    const [splitOrderId, setSplitOrderId] = useState<number | null>(null);
+    const [splitOrder, setSplitOrder] = useState<Order | null>(null);
+    const [splitValues, setSplitValues] = useState({
+        split_quantity: 0,
+        tp1: 0,
+        sl1: 0,
+        tp2: 0,
+        sl2: 0,
+    });
+    const [splitting, setSplitting] = useState(false);
 
     const startEdit = (order: Order) => {
         setError(null);
@@ -62,6 +76,39 @@ export function OrdersTable({
         }
     };
 
+    const openSplit = (order: Order) => {
+        setSplitOrderId(order.id);
+        setSplitOrder(order);
+        const qty = order.quantity || 0;
+        setSplitValues({
+            split_quantity: qty / 2,
+            tp1: order.take_profit || 0,
+            sl1: order.stop_loss || 0,
+            tp2: order.take_profit || 0,
+            sl2: order.stop_loss || 0,
+        });
+    };
+
+    const closeSplit = () => {
+        setSplitOrderId(null);
+        setSplitOrder(null);
+    };
+
+    const saveSplit = async () => {
+        if (!onSplit || !splitOrderId) return;
+        setSplitting(true);
+        setError(null);
+        try {
+            await onSplit(splitOrderId, splitValues);
+            closeSplit();
+        } catch (e: any) {
+            const errorMsg = e?.response?.data?.detail || e?.message || "Failed to split order";
+            setError(errorMsg);
+        } finally {
+            setSplitting(false);
+        }
+    };
+
     if (isLoading) {
         return (
             <div className="flex items-center justify-center py-12">
@@ -80,6 +127,91 @@ export function OrdersTable({
 
     return (
         <div className="overflow-x-auto">
+            {/* Split Modal */}
+            {splitOrderId && splitOrder && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                    <div className="bg-card border border-border rounded-2xl p-6 max-w-md w-full mx-4">
+                        <h3 className="text-lg font-semibold mb-4">Split Order #{splitOrderId}</h3>
+                        <p className="text-sm text-muted-foreground mb-4">
+                            Original: {splitOrder.quantity} {splitOrder.symbol}
+                        </p>
+
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium mb-1">Split Quantity (Part 1)</label>
+                                <input
+                                    type="number"
+                                    value={splitValues.split_quantity}
+                                    onChange={(e) => setSplitValues({ ...splitValues, split_quantity: parseFloat(e.target.value) })}
+                                    className="w-full px-3 py-2 rounded-lg bg-muted border border-border"
+                                    step="0.0001"
+                                    max={splitOrder.quantity}
+                                />
+                                <p className="text-xs text-muted-foreground mt-1">
+                                    Part 2: {((splitOrder.quantity || 0) - splitValues.split_quantity).toFixed(4)}
+                                </p>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium mb-1 text-emerald-500">TP Part 1</label>
+                                    <input
+                                        type="number"
+                                        value={splitValues.tp1}
+                                        onChange={(e) => setSplitValues({ ...splitValues, tp1: parseFloat(e.target.value) })}
+                                        className="w-full px-3 py-2 rounded-lg bg-muted border border-border"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium mb-1 text-red-500">SL Part 1</label>
+                                    <input
+                                        type="number"
+                                        value={splitValues.sl1}
+                                        onChange={(e) => setSplitValues({ ...splitValues, sl1: parseFloat(e.target.value) })}
+                                        className="w-full px-3 py-2 rounded-lg bg-muted border border-border"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium mb-1 text-emerald-500">TP Part 2</label>
+                                    <input
+                                        type="number"
+                                        value={splitValues.tp2}
+                                        onChange={(e) => setSplitValues({ ...splitValues, tp2: parseFloat(e.target.value) })}
+                                        className="w-full px-3 py-2 rounded-lg bg-muted border border-border"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium mb-1 text-red-500">SL Part 2</label>
+                                    <input
+                                        type="number"
+                                        value={splitValues.sl2}
+                                        onChange={(e) => setSplitValues({ ...splitValues, sl2: parseFloat(e.target.value) })}
+                                        className="w-full px-3 py-2 rounded-lg bg-muted border border-border"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex gap-3 mt-6">
+                            <button
+                                onClick={closeSplit}
+                                className="flex-1 py-2 px-4 rounded-lg bg-muted text-muted-foreground hover:bg-muted/80"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={saveSplit}
+                                disabled={splitting}
+                                className="flex-1 py-2 px-4 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 flex items-center justify-center gap-2"
+                            >
+                                {splitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Scissors className="w-4 h-4" />}
+                                Split
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {error && (
                 <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-500 text-sm flex items-center justify-between">
                     <span>{error}</span>
@@ -299,8 +431,18 @@ export function OrdersTable({
                                                         <button
                                                             onClick={() => onClose(order.id)}
                                                             className="p-2 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors"
+                                                            title="Close Order"
                                                         >
                                                             <X className="w-4 h-4" />
+                                                        </button>
+                                                    )}
+                                                    {type === "executed" && onSplit && (
+                                                        <button
+                                                            onClick={() => openSplit(order)}
+                                                            className="p-2 rounded-lg bg-purple-500/10 text-purple-500 hover:bg-purple-500/20 transition-colors"
+                                                            title="Split Order"
+                                                        >
+                                                            <Scissors className="w-4 h-4" />
                                                         </button>
                                                     )}
                                                 </>
