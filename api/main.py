@@ -51,7 +51,7 @@ async def add_security_headers(request: Request, call_next):
     return response
 
 # Include routers
-from api.routes import two_factor
+from api.routes import two_factor, admin
 app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(two_factor.router, prefix="/api/2fa", tags=["Two-Factor Auth"])
 app.include_router(orders.router, prefix="/api/orders", tags=["Orders"])
@@ -60,6 +60,7 @@ app.include_router(apikeys.router, prefix="/api/apikeys", tags=["API Keys"])
 app.include_router(profile.router, prefix="/api/profile", tags=["Profile"])
 app.include_router(logs.router, prefix="/api/logs", tags=["Logs"])
 app.include_router(telegram.router, prefix="/api/telegram", tags=["Telegram"])
+app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
 app.include_router(ws.router, prefix="", tags=["WebSocket"])  # No prefix for WS
 
 
