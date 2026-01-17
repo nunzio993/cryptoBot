@@ -1049,6 +1049,7 @@ async def split_order(
             symbol_info = adapter.client.get_symbol_info(order.symbol)
             filters = {f['filterType']: f for f in symbol_info['filters']}
             step_size = float(filters['LOT_SIZE']['stepSize'])
+            tick_size = float(filters['PRICE_FILTER']['tickSize'])
             
             def format_qty(qty):
                 from decimal import Decimal, ROUND_DOWN
@@ -1056,27 +1057,57 @@ async def split_order(
                 qty_dec = Decimal(str(qty)).quantize(step, rounding=ROUND_DOWN)
                 return str(qty_dec).rstrip('0').rstrip('.')
             
+            def format_price(price):
+                from decimal import Decimal, ROUND_DOWN
+                tick = Decimal(str(tick_size))
+                price_dec = Decimal(str(price)).quantize(tick, rounding=ROUND_DOWN)
+                return str(price_dec).rstrip('0').rstrip('.')
+            
+            import logging
+            logger = logging.getLogger('orders')
+            
             # Create TP order for part 1
             qty1_str = format_qty(split_qty)
-            adapter.client.create_order(
-                symbol=order.symbol,
-                side='SELL',
-                type='LIMIT',
-                timeInForce='GTC',
-                quantity=qty1_str,
-                price=str(split_data.tp1)
-            )
+            price1_str = format_price(split_data.tp1)
+            logger.info(f"[SPLIT] Creating TP1: {qty1_str} @ {price1_str}")
+            
+            try:
+                resp1 = adapter.client.create_order(
+                    symbol=order.symbol,
+                    side='SELL',
+                    type='LIMIT',
+                    timeInForce='GTC',
+                    quantity=qty1_str,
+                    price=price1_str
+                )
+                logger.info(f"[SPLIT] TP1 created: orderId={resp1.get('orderId')}")
+            except Exception as e1:
+                logger.error(f"[SPLIT] Failed to create TP1: {e1}")
+                raise
             
             # Create TP order for part 2
             qty2_str = format_qty(remaining_qty)
-            adapter.client.create_order(
-                symbol=order.symbol,
-                side='SELL',
-                type='LIMIT',
-                timeInForce='GTC',
-                quantity=qty2_str,
-                price=str(split_data.tp2)
-            )
+            price2_str = format_price(split_data.tp2)
+            logger.info(f"[SPLIT] Creating TP2: {qty2_str} @ {price2_str}")
+            
+            try:
+                resp2 = adapter.client.create_order(
+                    symbol=order.symbol,
+                    side='SELL',
+                    type='LIMIT',
+                    timeInForce='GTC',
+                    quantity=qty2_str,
+                    price=price2_str
+                )
+                logger.info(f"[SPLIT] TP2 created: orderId={resp2.get('orderId')}")
+            except Exception as e2:
+                logger.error(f"[SPLIT] Failed to create TP2: {e2}")
+                # Try to cancel TP1 if TP2 fails
+                try:
+                    adapter.client.cancel_order(symbol=order.symbol, orderId=resp1.get('orderId'))
+                except:
+                    pass
+                raise
             
     except Exception as e:
         # Rollback DB changes if exchange update fails
