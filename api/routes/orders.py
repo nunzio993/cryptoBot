@@ -432,8 +432,12 @@ async def create_order_from_holding(
     tick_size = float(filters['PRICE_FILTER']['tickSize'])
     min_qty = float(filters['LOT_SIZE']['minQty'])
     
-    # Check actual balance available
-    asset_name = order_data.symbol.replace("USDC", "").replace("USDT", "").replace("BTC", "").replace("ETH", "")
+    # Check actual balance available - extract base asset correctly
+    asset_name = order_data.symbol
+    for quote in ['USDC', 'USDT']:
+        if asset_name.endswith(quote):
+            asset_name = asset_name[:-len(quote)]
+            break
     balance_info = adapter.get_balance(asset_name)
     free_balance = float(balance_info) if balance_info else 0
     
@@ -887,28 +891,44 @@ async def close_order(
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
     
-    if order.status != "EXECUTED":
-        raise HTTPException(status_code=400, detail="Can only close EXECUTED orders")
+    if order.status not in ["EXECUTED", "PARTIAL_FILLED"]:
+        raise HTTPException(status_code=400, detail="Can only close EXECUTED or PARTIAL_FILLED orders")
     
-    # Get adapter
-    exchange = db.query(Exchange).filter_by(name="binance").first()
+    # Get adapter using order's exchange_id (not hardcoded binance)
+    if order.exchange_id:
+        exchange = db.query(Exchange).filter_by(id=order.exchange_id).first()
+    else:
+        exchange = db.query(Exchange).filter_by(name="binance").first()
+    
+    if not exchange:
+        raise HTTPException(status_code=400, detail="Exchange not found")
+    
+    is_testnet = order.is_testnet if order.is_testnet is not None else (network_mode == "Testnet")
+    
     key = db.query(APIKey).filter_by(
         user_id=current_user.id,
         exchange_id=exchange.id,
-        is_testnet=(network_mode == "Testnet")
+        is_testnet=is_testnet
     ).first()
     
     if not key:
-        raise HTTPException(status_code=400, detail="No API key configured")
+        raise HTTPException(status_code=400, detail=f"No API key configured for {exchange.name}")
     
     from src.crypto_utils import decrypt_api_key
+    from src.exchange_factory import ExchangeFactory
+    
     decrypted_key = decrypt_api_key(key.api_key, current_user.id)
     decrypted_secret = decrypt_api_key(key.secret_key, current_user.id)
     
-    adapter = BinanceAdapter(decrypted_key, decrypted_secret, testnet=(network_mode == "Testnet"))
+    adapter = ExchangeFactory.create(exchange.name, decrypted_key, decrypted_secret, testnet=is_testnet)
     
     try:
-        asset_name = order.symbol.replace("USDC", "")
+        # Extract base asset correctly
+        asset_name = order.symbol
+        for quote in ['USDC', 'USDT']:
+            if asset_name.endswith(quote):
+                asset_name = asset_name[:-len(quote)]
+                break
         balance = adapter.get_balance(asset_name)
         
         symbol_info = adapter.client.get_symbol_info(order.symbol)
