@@ -337,13 +337,14 @@ class BybitAdapter(ExchangeAdapter):
             raise Exception(f"Bybit order failed: {result['retMsg']}")
         return result['result']
     
-    def cancel_order(self, symbol: str, order_id):
-        """Cancel an order"""
+    def cancel_order(self, symbol: str, order_id=None, orderId=None):
+        """Cancel an order - accepts both order_id and orderId for compatibility"""
+        actual_order_id = order_id or orderId
         formatted = self._format_symbol(symbol)
         result = self.session.cancel_order(
             category="spot",
             symbol=formatted,
-            orderId=str(order_id)
+            orderId=str(actual_order_id)
         )
         if result['retCode'] != 0:
             raise Exception(f"Bybit cancel failed: {result['retMsg']}")
