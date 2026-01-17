@@ -1006,6 +1006,83 @@ async def split_order(
     )
     
     db.add(new_order)
+    
+    # Update TP orders on exchange (cancel old, create 2 new)
+    try:
+        from src.crypto_utils import decrypt_api_key
+        from src.exchange_factory import ExchangeFactory
+        
+        # Get API key for this order's exchange
+        if order.exchange_id:
+            exchange = db.query(Exchange).filter_by(id=order.exchange_id).first()
+            key = db.query(APIKey).filter_by(
+                user_id=current_user.id,
+                exchange_id=order.exchange_id,
+                is_testnet=order.is_testnet
+            ).first()
+        else:
+            exchange = db.query(Exchange).filter_by(name="binance").first()
+            key = db.query(APIKey).filter_by(
+                user_id=current_user.id,
+                exchange_id=exchange.id if exchange else None,
+                is_testnet=order.is_testnet
+            ).first()
+        
+        if key and exchange:
+            decrypted_key = decrypt_api_key(key.api_key, current_user.id)
+            decrypted_secret = decrypt_api_key(key.secret_key, current_user.id)
+            
+            adapter = ExchangeFactory.create(
+                exchange.name, decrypted_key, decrypted_secret, testnet=key.is_testnet
+            )
+            
+            # Cancel all existing SELL (TP) orders for this symbol
+            open_orders = adapter.get_open_orders(symbol=order.symbol)
+            for open_order in open_orders:
+                if open_order.get('side') == 'SELL':
+                    adapter.client.cancel_order(
+                        symbol=order.symbol,
+                        orderId=open_order['orderId']
+                    )
+            
+            # Get symbol info for quantity formatting
+            symbol_info = adapter.client.get_symbol_info(order.symbol)
+            filters = {f['filterType']: f for f in symbol_info['filters']}
+            step_size = float(filters['LOT_SIZE']['stepSize'])
+            
+            def format_qty(qty):
+                from decimal import Decimal, ROUND_DOWN
+                step = Decimal(str(step_size))
+                qty_dec = Decimal(str(qty)).quantize(step, rounding=ROUND_DOWN)
+                return str(qty_dec).rstrip('0').rstrip('.')
+            
+            # Create TP order for part 1
+            qty1_str = format_qty(split_qty)
+            adapter.client.create_order(
+                symbol=order.symbol,
+                side='SELL',
+                type='LIMIT',
+                timeInForce='GTC',
+                quantity=qty1_str,
+                price=str(split_data.tp1)
+            )
+            
+            # Create TP order for part 2
+            qty2_str = format_qty(remaining_qty)
+            adapter.client.create_order(
+                symbol=order.symbol,
+                side='SELL',
+                type='LIMIT',
+                timeInForce='GTC',
+                quantity=qty2_str,
+                price=str(split_data.tp2)
+            )
+            
+    except Exception as e:
+        # Rollback DB changes if exchange update fails
+        db.rollback()
+        raise HTTPException(status_code=400, detail=f"Failed to update TP orders on exchange: {str(e)}")
+    
     db.commit()
     db.refresh(order)
     db.refresh(new_order)
@@ -1017,7 +1094,7 @@ async def split_order(
     await manager.broadcast_portfolio_update(current_user.id)
     
     return {
-        "message": "Order split successfully",
+        "message": "Order split successfully - TP orders updated on exchange",
         "part1": {
             "id": order.id,
             "quantity": float(order.quantity),
