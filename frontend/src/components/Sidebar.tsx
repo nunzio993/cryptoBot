@@ -98,7 +98,7 @@ export function Sidebar({ currentPath }: SidebarProps) {
                     })}
 
                     {/* Admin link - only visible for admin user */}
-                    {user?.username === "admin" && (
+                    {user?.username?.toLowerCase() === "admin" && (
                         <Link
                             href="/dashboard/admin"
                             onClick={() => setMobileOpen(false)}
