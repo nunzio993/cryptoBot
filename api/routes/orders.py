@@ -1049,14 +1049,16 @@ async def split_order(
                 exchange.name, decrypted_key, decrypted_secret, testnet=key.is_testnet
             )
             
-            # Cancel all existing SELL (TP) orders for this symbol
-            open_orders = adapter.get_open_orders(symbol=order.symbol)
-            for open_order in open_orders:
-                if open_order.get('side') == 'SELL':
+            # Cancel ONLY the TP order for this specific position (using tp_order_id)
+            if order.tp_order_id:
+                try:
                     adapter.client.cancel_order(
                         symbol=order.symbol,
-                        orderId=open_order['orderId']
+                        orderId=int(order.tp_order_id)
                     )
+                except Exception as e:
+                    import logging
+                    logging.getLogger('orders').warning(f"[SPLIT] Could not cancel TP order {order.tp_order_id}: {e}")
             
             # Get symbol info for quantity formatting
             symbol_info = adapter.client.get_symbol_info(order.symbol)
