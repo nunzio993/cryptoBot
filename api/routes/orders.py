@@ -632,7 +632,7 @@ async def create_order(
         if order_value > available_usdc:
             raise HTTPException(
                 status_code=400, 
-                detail=f"Saldo insufficiente: richiesti ${order_value:.2f}, disponibili ${available_usdc:.2f} USDC"
+                detail=f"Insufficient balance: required ${order_value:.2f}, available ${available_usdc:.2f} USDC"
             )
     except HTTPException:
         raise
