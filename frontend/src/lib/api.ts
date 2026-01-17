@@ -239,3 +239,19 @@ export const authApi = {
     resetPassword: (token: string, newPassword: string, confirmPassword: string) =>
         api.post("/auth/reset-password", { token, new_password: newPassword, confirm_password: confirmPassword }),
 };
+
+// Admin API (user management)
+export interface AdminUser {
+    id: number;
+    username: string;
+    email: string;
+    created_at: string | null;
+    two_factor_enabled: boolean;
+}
+
+export const adminApi = {
+    listUsers: () => api.get<AdminUser[]>("/admin/users"),
+    getUser: (id: number) => api.get<AdminUser>(`/admin/users/${id}`),
+    updateUser: (id: number, data: { email?: string }) => api.put<AdminUser>(`/admin/users/${id}`, data),
+    deleteUser: (id: number) => api.delete(`/admin/users/${id}`),
+};

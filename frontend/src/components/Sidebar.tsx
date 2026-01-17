@@ -12,6 +12,7 @@ import {
     LogOut,
     Menu,
     X,
+    Shield,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -95,6 +96,23 @@ export function Sidebar({ currentPath }: SidebarProps) {
                             </Link>
                         );
                     })}
+
+                    {/* Admin link - only visible for admin user */}
+                    {user?.username === "admin" && (
+                        <Link
+                            href="/dashboard/admin"
+                            onClick={() => setMobileOpen(false)}
+                            className={cn(
+                                "flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all",
+                                currentPath === "/dashboard/admin"
+                                    ? "bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-lg"
+                                    : "text-purple-400 hover:text-purple-300 hover:bg-purple-500/10"
+                            )}
+                        >
+                            <Shield className="w-5 h-5" />
+                            Admin
+                        </Link>
+                    )}
                 </nav>
 
                 {/* User section */}
