@@ -197,7 +197,7 @@ def auto_execute_pending():
                     executed_qty_str = ('{:.8f}'.format(float(executed_qty))).rstrip('0').rstrip('.')
 
                     # TP LIMIT - use actual executed quantity
-                    adapter.client.create_order(
+                    tp_response = adapter.client.create_order(
                         symbol=order.symbol,
                         side='SELL',
                         type='LIMIT',
@@ -210,6 +210,7 @@ def auto_execute_pending():
                     order.executed_at = exec_time
                     order.executed_price = exec_price
                     order.quantity = executed_qty  # Update with actual executed quantity
+                    order.tp_order_id = str(tp_response.get('orderId'))  # Save Binance TP order ID
                     session.commit()
 
                     tlogger.info(f"[{'PARTIAL_FILLED' if is_partial else 'EXECUTED'}] order {order.id} @ {exec_price}, qty={executed_qty}/{original_qty}, TP placed")

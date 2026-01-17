@@ -827,14 +827,19 @@ async def update_order(
                 pass  # If price check fails, allow the update
             
             try:
-                adapter.update_spot_tp_sl(
+                # Pass existing tp_order_id for accurate cancellation
+                new_tp_order_id = adapter.update_spot_tp_sl(
                     order.symbol,
                     float(order.quantity),
                     float(order.take_profit),
                     float(order.stop_loss),
                     user_id=current_user.id,
-                    old_tp=old_tp
+                    old_tp=old_tp,
+                    tp_order_id=order.tp_order_id
                 )
+                # Save new tp_order_id
+                if new_tp_order_id:
+                    order.tp_order_id = new_tp_order_id
             except Exception as e:
                 raise HTTPException(status_code=400, detail=f"Failed to update on exchange: {str(e)}")
     
@@ -1085,6 +1090,8 @@ async def split_order(
                     price=price1_str
                 )
                 logger.info(f"[SPLIT] TP1 created: orderId={resp1.get('orderId')}")
+                # Save TP order ID for part 1
+                order.tp_order_id = str(resp1.get('orderId'))
             except Exception as e1:
                 logger.error(f"[SPLIT] Failed to create TP1: {e1}")
                 raise
@@ -1104,6 +1111,8 @@ async def split_order(
                     price=price2_str
                 )
                 logger.info(f"[SPLIT] TP2 created: orderId={resp2.get('orderId')}")
+                # Save TP order ID for part 2
+                new_order.tp_order_id = str(resp2.get('orderId'))
             except Exception as e2:
                 logger.error(f"[SPLIT] Failed to create TP2: {e2}")
                 # Try to cancel TP1 if TP2 fails

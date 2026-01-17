@@ -80,16 +80,10 @@ class BinanceAdapter(ExchangeAdapter):
         ticker = self.client.get_symbol_ticker(symbol=symbol)
         return float(ticker['price'])
 
-    # NOTE: __init__ is defined above (line 34) - removed duplicate here
+    def __init__(self, api_key, api_secret, testnet=True):
+        self.client = Client(api_key, api_secret, testnet=testnet)
 
     def get_client(self, user_id):
-        """
-        DEPRECATED: Use get_exchange_adapter() from core_and_scheduler.py instead.
-        This method does not decrypt API keys and may fail with encrypted keys.
-        """
-        import warnings
-        warnings.warn("get_client() is deprecated. Use get_exchange_adapter() instead.", DeprecationWarning)
-        
         with SessionLocal() as session:
             exchange = session.query(Exchange).filter_by(name="binance").first()
             if not exchange:
@@ -104,7 +98,6 @@ class BinanceAdapter(ExchangeAdapter):
             if not api_key_entry:
                 raise Exception(f"Nessuna API key trovata per user_id={user_id}")
 
-            # NOTE: This does NOT decrypt keys - use get_exchange_adapter() instead
             return Client(api_key_entry.api_key, api_key_entry.secret_key)
 
     def get_balance(self, asset: str) -> float:
@@ -130,72 +123,60 @@ class BinanceAdapter(ExchangeAdapter):
     def cancel_order(self, symbol: str, order_id):
         return self.client.cancel_order(symbol=symbol, orderId=order_id)
 
-    def update_spot_tp_sl(self, symbol, quantity, new_tp, new_sl, user_id=None, old_tp=None):
+    def update_spot_tp_sl(self, symbol, quantity, new_tp, new_sl, user_id=None, old_tp=None, tp_order_id=None):
         """
         Update TP/SL for a position.
-        old_tp: If provided, used to identify the specific order to cancel
+        tp_order_id: If provided, directly cancel this Binance order ID (most accurate)
+        old_tp: Fallback - used to identify the specific order to cancel by price
         """
-        with SessionLocal() as session:
-            try:
+        import logging
+        logger = logging.getLogger('adapters')
+        
+        try:
+            # Cancel existing TP order
+            if tp_order_id:
+                # Best case: we know the exact order ID
+                logger.info(f"[UPDATE_TP] Cancelling TP order by ID: {tp_order_id}")
+                try:
+                    self.client.cancel_order(symbol=symbol, orderId=int(tp_order_id))
+                    logger.info(f"[UPDATE_TP] Cancelled order {tp_order_id}")
+                except Exception as e:
+                    logger.warning(f"[UPDATE_TP] Could not cancel order {tp_order_id}: {e}")
+            elif old_tp:
+                # Fallback: find by qty+price
+                logger.info(f"[UPDATE_TP] No tp_order_id, searching by qty={quantity} price={old_tp}")
                 open_orders = self.client.get_open_orders(symbol=symbol)
-                
-                # Find and cancel the specific order we want to update
-                # Match by quantity AND price (if old_tp provided)
-                order_cancelled = False
-                orders_to_restore = []  # Other orders we might accidentally affect
-                
                 for order in open_orders:
                     if order['side'] == 'SELL':
                         order_qty = float(order['origQty'])
                         order_price = float(order['price'])
-                        
                         qty_matches = abs(order_qty - float(quantity)) < 0.0001
-                        
-                        if old_tp and qty_matches:
-                            # If old_tp provided, match by price too
-                            if abs(order_price - float(old_tp)) < 0.01:
-                                self.client.cancel_order(symbol=symbol, orderId=order['orderId'])
-                                order_cancelled = True
-                            else:
-                                # Same qty but different price - save for reference
-                                orders_to_restore.append({'qty': order_qty, 'price': order_price})
-                        elif qty_matches and not order_cancelled:
-                            # No old_tp, just match by qty (legacy behavior)
+                        price_matches = abs(order_price - float(old_tp)) < 0.1
+                        if qty_matches and price_matches:
+                            logger.info(f"[UPDATE_TP] Found matching order {order['orderId']}, cancelling")
                             self.client.cancel_order(symbol=symbol, orderId=order['orderId'])
-                            order_cancelled = True
+                            break
 
-                # Create new TP order
-                qty_str = ('{:.8f}'.format(float(quantity))).rstrip('0').rstrip('.')
-                self.client.create_order(
-                    symbol=symbol,
-                    side='SELL',
-                    type='LIMIT',
-                    timeInForce='GTC',
-                    quantity=qty_str,
-                    price=str(new_tp)
-                )
+            # Create new TP order
+            qty_str = ('{:.8f}'.format(float(quantity))).rstrip('0').rstrip('.')
+            new_order = self.client.create_order(
+                symbol=symbol,
+                side='SELL',
+                type='LIMIT',
+                timeInForce='GTC',
+                quantity=qty_str,
+                price=str(new_tp)
+            )
+            new_tp_order_id = str(new_order.get('orderId'))
+            logger.info(f"[UPDATE_TP] Created new TP order {new_tp_order_id} @ {new_tp}")
 
-                # Update DB
-                order_query = session.query(Order).filter(
-                    Order.symbol == symbol,
-                    Order.quantity == quantity,
-                    Order.status == "EXECUTED"
-                )
-                if user_id:
-                    order_query = order_query.filter(Order.user_id == user_id)
-                order = order_query.order_by(Order.executed_at.desc()).first()
-                if order:
-                    order.take_profit = new_tp
-                    order.stop_loss = new_sl
-                    session.commit()
-
-                return True
-            except BinanceAPIException as e:
-                print(f"Errore Binance API update TP: {e}")
-                raise
-            except Exception as e:
-                print(f"Errore generico update TP/SL: {e}")
-                raise
+            return new_tp_order_id
+        except BinanceAPIException as e:
+            logger.error(f"[UPDATE_TP] Binance API error: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"[UPDATE_TP] Error: {e}")
+            raise
     
     def get_open_orders(self, symbol: str) -> list:
         """Get open orders for a symbol"""
