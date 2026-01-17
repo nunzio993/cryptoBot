@@ -3,7 +3,7 @@ import sys
 import logging
 import pytz
 from apscheduler.schedulers.blocking import BlockingScheduler
-from src.core_and_scheduler import auto_execute_pending, check_and_execute_stop_loss, sync_orders, check_tp_fills
+from src.core_and_scheduler import auto_execute_pending, check_and_execute_stop_loss, sync_orders, check_tp_fills, check_cancelled_tp_orders
 
 # Root logger
 root = logging.getLogger()
@@ -41,5 +41,6 @@ sched = BlockingScheduler()
 if __name__ == "__main__":
     sched.configure(timezone=pytz.timezone("Europe/Rome"))
     sched.add_job(scheduled_job, 'interval', minutes=1, id='exec_pending')
-    root.info("Scheduler avviato (Testnet): controllo ordini ogni minuto")
+    sched.add_job(check_cancelled_tp_orders, 'interval', seconds=10, id='check_tp_cancelled')
+    root.info("Scheduler avviato: controllo ordini ogni minuto, check TP cancellati ogni 10 sec")
     sched.start()
