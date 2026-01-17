@@ -142,14 +142,17 @@ class BinanceAdapter(ExchangeAdapter):
             from decimal import Decimal, ROUND_DOWN
             
             def format_qty(qty):
-                step = Decimal(str(step_size))
-                qty_dec = Decimal(str(qty)).quantize(step, rounding=ROUND_DOWN)
-                return str(qty_dec).rstrip('0').rstrip('.')
+                step = Decimal(str(step_size)).normalize()  # "0.00100000" -> "0.001"
+                qty_dec = Decimal(str(qty))
+                # Round down to step
+                result = (qty_dec / step).quantize(Decimal('1'), rounding=ROUND_DOWN) * step
+                return str(result.normalize())
             
             def format_price(price):
-                tick = Decimal(str(tick_size))
-                price_dec = Decimal(str(price)).quantize(tick, rounding=ROUND_DOWN)
-                return str(price_dec).rstrip('0').rstrip('.')
+                tick = Decimal(str(tick_size)).normalize()
+                price_dec = Decimal(str(price))
+                result = (price_dec / tick).quantize(Decimal('1'), rounding=ROUND_DOWN) * tick
+                return str(result.normalize())
             
             # Cancel existing TP order
             if tp_order_id:
