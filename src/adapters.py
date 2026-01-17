@@ -80,9 +80,6 @@ class BinanceAdapter(ExchangeAdapter):
         ticker = self.client.get_symbol_ticker(symbol=symbol)
         return float(ticker['price'])
 
-    def __init__(self, api_key, api_secret, testnet=True):
-        self.client = Client(api_key, api_secret, testnet=testnet)
-
     def get_client(self, user_id):
         with SessionLocal() as session:
             exchange = session.query(Exchange).filter_by(name="binance").first()
