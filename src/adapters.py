@@ -285,43 +285,50 @@ class BybitAdapter(ExchangeAdapter):
     
     def get_balance(self, asset: str) -> float:
         """Get total balance for an asset - checks both UNIFIED and SPOT accounts"""
-        import logging
-        logger = logging.getLogger('bybit_debug')
-        
         try:
             # Try UNIFIED account first (UTA - Unified Trading Account)
-            logger.info(f"[BYBIT] Checking UNIFIED balance for {asset}")
+            print(f"[BYBIT] Checking UNIFIED balance for {asset}")
             result = self.session.get_wallet_balance(accountType="UNIFIED")
-            logger.info(f"[BYBIT] UNIFIED response: retCode={result.get('retCode')}")
+            print(f"[BYBIT] UNIFIED response: retCode={result.get('retCode')}, retMsg={result.get('retMsg')}")
             
             if result['retCode'] == 0:
-                coins = result['result']['list'][0].get('coin', [])
-                logger.info(f"[BYBIT] UNIFIED coins found: {[c['coin'] for c in coins]}")
-                for coin in coins:
-                    if coin['coin'] == asset:
-                        bal = float(coin.get('walletBalance', 0))
-                        logger.info(f"[BYBIT] Found {asset} in UNIFIED: {bal}")
-                        if bal > 0:
-                            return bal
+                account_list = result['result'].get('list', [])
+                if account_list:
+                    coins = account_list[0].get('coin', [])
+                    print(f"[BYBIT] UNIFIED coins found: {[c['coin'] for c in coins]}")
+                    for coin in coins:
+                        if coin['coin'] == asset:
+                            bal = float(coin.get('walletBalance', 0))
+                            print(f"[BYBIT] Found {asset} in UNIFIED: {bal}")
+                            if bal > 0:
+                                return bal
+                else:
+                    print(f"[BYBIT] UNIFIED account list is empty")
             
             # Try SPOT account as fallback
-            logger.info(f"[BYBIT] Checking SPOT balance for {asset}")
+            print(f"[BYBIT] Checking SPOT balance for {asset}")
             result = self.session.get_wallet_balance(accountType="SPOT")
-            logger.info(f"[BYBIT] SPOT response: retCode={result.get('retCode')}")
+            print(f"[BYBIT] SPOT response: retCode={result.get('retCode')}, retMsg={result.get('retMsg')}")
             
             if result['retCode'] == 0:
-                coins = result['result']['list'][0].get('coin', [])
-                logger.info(f"[BYBIT] SPOT coins found: {[c['coin'] for c in coins]}")
-                for coin in coins:
-                    if coin['coin'] == asset:
-                        bal = float(coin.get('walletBalance', 0))
-                        logger.info(f"[BYBIT] Found {asset} in SPOT: {bal}")
-                        return bal
+                account_list = result['result'].get('list', [])
+                if account_list:
+                    coins = account_list[0].get('coin', [])
+                    print(f"[BYBIT] SPOT coins found: {[c['coin'] for c in coins]}")
+                    for coin in coins:
+                        if coin['coin'] == asset:
+                            bal = float(coin.get('walletBalance', 0))
+                            print(f"[BYBIT] Found {asset} in SPOT: {bal}")
+                            return bal
+                else:
+                    print(f"[BYBIT] SPOT account list is empty")
             
-            logger.warning(f"[BYBIT] {asset} not found in any account")
+            print(f"[BYBIT] {asset} not found in any account")
             return 0.0
         except Exception as e:
-            logger.error(f"[BYBIT] get_balance error: {e}")
+            print(f"[BYBIT] get_balance error: {e}")
+            import traceback
+            traceback.print_exc()
             return 0.0
     
     def get_symbol_price(self, symbol: str) -> float:
