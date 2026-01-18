@@ -1097,25 +1097,8 @@ async def split_order(
                 exchange.name, decrypted_key, decrypted_secret, testnet=key.is_testnet
             )
             
-            # Cancel ONLY the TP order for this specific position (using tp_order_id)
-            # IMPORTANT: Clear tp_order_id immediately and commit to prevent race condition
-            # with scheduler's check_cancelled_tp_orders which runs every 10 seconds
-            old_tp_order_id = order.tp_order_id
-            if old_tp_order_id:
-                # Clear tp_order_id FIRST to prevent scheduler from checking it
-                order.tp_order_id = None
-                db.commit()
-                
-                try:
-                    adapter.client.cancel_order(
-                        symbol=order.symbol,
-                        orderId=int(old_tp_order_id)
-                    )
-                except Exception as e:
-                    import logging
-                    logging.getLogger('orders').warning(f"[SPLIT] Could not cancel TP order {old_tp_order_id}: {e}")
-            
-            # Get symbol info for quantity formatting
+            # Get symbol info for quantity formatting and validation FIRST
+            # IMPORTANT: Validate BEFORE cancelling TP to avoid orphaned positions
             symbol_info = adapter.client.get_symbol_info(order.symbol)
             filters = {f['filterType']: f for f in symbol_info['filters']}
             step_size = float(filters['LOT_SIZE']['stepSize'])
@@ -1123,7 +1106,7 @@ async def split_order(
             min_notional = float(filters.get('NOTIONAL', {}).get('minNotional', '5'))
             min_qty = float(filters['LOT_SIZE'].get('minQty', '0.00001'))
             
-            # Validate minimum order value for both parts
+            # Validate minimum order value for both parts BEFORE any exchange operations
             value1 = split_qty * float(split_data.tp1)
             value2 = remaining_qty * float(split_data.tp2)
             
@@ -1141,6 +1124,24 @@ async def split_order(
                 raise HTTPException(status_code=400, detail=f"Part 1 quantity {split_qty} is below minimum {min_qty}")
             if remaining_qty < min_qty:
                 raise HTTPException(status_code=400, detail=f"Part 2 quantity {remaining_qty} is below minimum {min_qty}")
+            
+            # NOW cancel the old TP order (only after validation passes)
+            # Clear tp_order_id immediately and commit to prevent race condition
+            # with scheduler's check_cancelled_tp_orders which runs every 10 seconds
+            old_tp_order_id = order.tp_order_id
+            if old_tp_order_id:
+                # Clear tp_order_id FIRST to prevent scheduler from checking it
+                order.tp_order_id = None
+                db.commit()
+                
+                try:
+                    adapter.client.cancel_order(
+                        symbol=order.symbol,
+                        orderId=int(old_tp_order_id)
+                    )
+                except Exception as e:
+                    import logging
+                    logging.getLogger('orders').warning(f"[SPLIT] Could not cancel TP order {old_tp_order_id}: {e}")
             
             def format_qty(qty):
                 from decimal import Decimal, ROUND_DOWN
