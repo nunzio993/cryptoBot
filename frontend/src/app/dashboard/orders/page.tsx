@@ -190,55 +190,70 @@ export default function OrdersPage() {
                 />
             )}
 
-            {/* Tabs */}
-            <div className="flex gap-2 p-1 bg-muted/50 rounded-xl w-fit">
-                {tabs.map((tab) => {
-                    const Icon = tab.icon;
-                    return (
-                        <button
-                            key={tab.id}
-                            onClick={() => setActiveTab(tab.id)}
-                            className={cn(
-                                "flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all",
-                                activeTab === tab.id
-                                    ? "bg-background shadow-sm"
-                                    : "text-muted-foreground hover:text-foreground"
-                            )}
-                        >
-                            <Icon className="w-4 h-4" />
-                            {tab.label}
-                            <span
-                                className={cn(
-                                    "px-2 py-0.5 rounded-full text-xs",
-                                    activeTab === tab.id
-                                        ? "bg-primary text-primary-foreground"
-                                        : "bg-muted text-muted-foreground"
-                                )}
-                            >
-                                {tab.count}
-                            </span>
-                        </button>
-                    );
-                })}
-            </div>
-
-            {/* Table */}
+            {/* Executed Orders Section */}
             <div className="bg-card rounded-2xl border border-border overflow-hidden">
+                <div className="p-4 border-b border-border flex items-center gap-3">
+                    <TrendingUp className="w-5 h-5 text-green-500" />
+                    <h3 className="font-semibold">Executed Positions</h3>
+                    <span className="px-2 py-0.5 rounded-full text-xs bg-green-500/20 text-green-500">
+                        {executedOrders.length}
+                    </span>
+                </div>
                 <OrdersTable
-                    orders={currentOrders}
-                    type={activeTab}
+                    orders={executedOrders}
+                    type="executed"
                     onUpdate={handleUpdate}
                     onCancel={handleCancel}
                     onClose={handleClose}
                     onSplit={handleSplit}
-                    isLoading={currentLoading}
+                    isLoading={executedLoading}
                 />
             </div>
 
-            {/* External Holdings */}
+            {/* Pending Orders Section */}
+            <div className="bg-card rounded-2xl border border-border overflow-hidden">
+                <div className="p-4 border-b border-border flex items-center gap-3">
+                    <Clock className="w-5 h-5 text-amber-500" />
+                    <h3 className="font-semibold">Pending Orders</h3>
+                    <span className="px-2 py-0.5 rounded-full text-xs bg-amber-500/20 text-amber-500">
+                        {pendingOrders.length}
+                    </span>
+                </div>
+                <OrdersTable
+                    orders={pendingOrders}
+                    type="pending"
+                    onUpdate={handleUpdate}
+                    onCancel={handleCancel}
+                    onClose={handleClose}
+                    onSplit={handleSplit}
+                    isLoading={pendingLoading}
+                />
+            </div>
+
+            {/* External Holdings - Always visible */}
             {selectedKeyId && (
                 <HoldingsSection apiKeyId={selectedKeyId} />
             )}
+
+            {/* Closed Orders - Collapsible */}
+            <details className="bg-card rounded-2xl border border-border overflow-hidden">
+                <summary className="p-4 cursor-pointer flex items-center gap-3 hover:bg-muted/30">
+                    <History className="w-5 h-5 text-muted-foreground" />
+                    <span className="font-semibold">Closed Orders</span>
+                    <span className="px-2 py-0.5 rounded-full text-xs bg-muted text-muted-foreground">
+                        {closedOrders.length}
+                    </span>
+                </summary>
+                <OrdersTable
+                    orders={closedOrders}
+                    type="closed"
+                    onUpdate={handleUpdate}
+                    onCancel={handleCancel}
+                    onClose={handleClose}
+                    onSplit={handleSplit}
+                    isLoading={closedLoading}
+                />
+            </details>
         </div>
     );
 }
@@ -264,9 +279,9 @@ function HoldingsSection({ apiKeyId }: { apiKeyId: number }) {
         );
     }
 
-    if (!holdingsData || holdingsData.holdings.length === 0) {
-        return null;
-    }
+    // Filter holdings with value >= $0.10
+    const filteredHoldings = holdingsData?.holdings.filter(h => h.current_value >= 0.10) || [];
+    const filteredTotalValue = filteredHoldings.reduce((sum, h) => sum + h.current_value, 0);
 
     return (
         <div className="bg-card rounded-2xl border border-border overflow-hidden">
@@ -274,54 +289,60 @@ function HoldingsSection({ apiKeyId }: { apiKeyId: number }) {
                 <div>
                     <h3 className="font-semibold">External Holdings</h3>
                     <p className="text-sm text-muted-foreground">
-                        Crypto bought outside this app • Total: ${holdingsData.total_value.toFixed(2)}
+                        Crypto bought outside this app • Total: ${filteredTotalValue.toFixed(2)}
                     </p>
                 </div>
             </div>
 
-            <div className="overflow-x-auto">
-                <table className="w-full">
-                    <thead className="bg-muted/50">
-                        <tr>
-                            <th className="text-left px-4 py-3 text-sm font-medium text-muted-foreground">Asset</th>
-                            <th className="text-right px-4 py-3 text-sm font-medium text-muted-foreground">Quantity</th>
-                            <th className="text-right px-4 py-3 text-sm font-medium text-muted-foreground">Price</th>
-                            <th className="text-right px-4 py-3 text-sm font-medium text-muted-foreground">Value</th>
-                            <th className="text-right px-4 py-3 text-sm font-medium text-muted-foreground">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {holdingsData.holdings.map((holding) => (
-                            <tr key={holding.asset} className="border-t border-border hover:bg-muted/30">
-                                <td className="px-4 py-3">
-                                    <div className="font-semibold">{holding.asset}</div>
-                                    <div className="text-xs text-muted-foreground">{holding.symbol}</div>
-                                </td>
-                                <td className="px-4 py-3 text-right font-mono">
-                                    {holding.quantity.toFixed(6)}
-                                </td>
-                                <td className="px-4 py-3 text-right">
-                                    ${holding.current_price.toFixed(4)}
-                                </td>
-                                <td className="px-4 py-3 text-right font-semibold">
-                                    ${holding.current_value.toFixed(2)}
-                                </td>
-                                <td className="px-4 py-3 text-right">
-                                    <button
-                                        className="px-3 py-1 text-xs bg-primary/10 text-primary rounded-lg hover:bg-primary/20 transition-colors"
-                                        onClick={() => setEditingHolding(holding)}
-                                    >
-                                        Set TP/SL
-                                    </button>
-                                </td>
+            {filteredHoldings.length === 0 ? (
+                <div className="p-8 text-center text-muted-foreground">
+                    No external holdings with value ≥ $0.10
+                </div>
+            ) : (
+                <div className="overflow-x-auto">
+                    <table className="w-full">
+                        <thead className="bg-muted/50">
+                            <tr>
+                                <th className="text-left px-4 py-3 text-sm font-medium text-muted-foreground">Asset</th>
+                                <th className="text-right px-4 py-3 text-sm font-medium text-muted-foreground">Quantity</th>
+                                <th className="text-right px-4 py-3 text-sm font-medium text-muted-foreground">Price</th>
+                                <th className="text-right px-4 py-3 text-sm font-medium text-muted-foreground">Value</th>
+                                <th className="text-right px-4 py-3 text-sm font-medium text-muted-foreground">Actions</th>
                             </tr>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
+                        </thead>
+                        <tbody>
+                            {filteredHoldings.map((holding) => (
+                                <tr key={holding.asset} className="border-t border-border hover:bg-muted/30">
+                                    <td className="px-4 py-3">
+                                        <div className="font-semibold">{holding.asset}</div>
+                                        <div className="text-xs text-muted-foreground">{holding.symbol}</div>
+                                    </td>
+                                    <td className="px-4 py-3 text-right font-mono">
+                                        {holding.quantity.toFixed(6)}
+                                    </td>
+                                    <td className="px-4 py-3 text-right">
+                                        ${holding.current_price.toFixed(4)}
+                                    </td>
+                                    <td className="px-4 py-3 text-right font-semibold">
+                                        ${holding.current_value.toFixed(2)}
+                                    </td>
+                                    <td className="px-4 py-3 text-right">
+                                        <button
+                                            className="px-3 py-1 text-xs bg-primary/10 text-primary rounded-lg hover:bg-primary/20 transition-colors"
+                                            onClick={() => setEditingHolding(holding)}
+                                        >
+                                            Set TP/SL
+                                        </button>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
 
             {/* Pagination */}
-            {holdingsData.total_pages > 1 && (
+            {holdingsData && holdingsData.total_pages > 1 && (
                 <div className="p-4 border-t border-border flex items-center justify-center gap-2">
                     <button
                         onClick={() => setPage(p => Math.max(1, p - 1))}
