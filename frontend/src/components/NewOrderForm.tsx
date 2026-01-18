@@ -53,7 +53,7 @@ export function NewOrderForm({ networkMode, apiKeyId, onSuccess }: NewOrderFormP
             stop_loss?: number;
             entry_interval?: string;
             stop_interval?: string;
-        }) => ordersApi.create(data, networkMode),
+        }) => ordersApi.create(data, networkMode, apiKeyId),
         onSuccess: () => {
             setError("");
             onSuccess();

@@ -128,8 +128,8 @@ export const ordersApi = {
         stop_loss?: number;
         entry_interval?: string;
         stop_interval?: string;
-    }, networkMode: string = "Testnet") =>
-        api.post<Order>("/orders", data, { params: { network_mode: networkMode } }),
+    }, networkMode: string = "Testnet", apiKeyId?: number) =>
+        api.post<Order>("/orders", data, { params: { network_mode: networkMode, api_key_id: apiKeyId } }),
 
     createFromHolding: (data: {
         symbol: string;
