@@ -50,8 +50,9 @@ if __name__ == "__main__":
     
     sched.configure(timezone=pytz.timezone("Europe/Rome"))
     sched.add_job(scheduled_job, 'interval', minutes=1, id='exec_pending')
+    sched.add_job(check_and_execute_stop_loss, 'interval', seconds=30, id='check_sl_fast')
     sched.add_job(check_cancelled_tp_orders, 'interval', seconds=10, id='check_tp_cancelled')
-    root.info("Scheduler started: orders every 1 min, TP check every 10 sec")
+    root.info("Scheduler started: orders every 1 min, SL every 30 sec, TP check every 10 sec")
     
     try:
         sched.start()

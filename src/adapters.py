@@ -80,23 +80,6 @@ class BinanceAdapter(ExchangeAdapter):
         ticker = self.client.get_symbol_ticker(symbol=symbol)
         return float(ticker['price'])
 
-    def get_client(self, user_id):
-        with SessionLocal() as session:
-            exchange = session.query(Exchange).filter_by(name="binance").first()
-            if not exchange:
-                raise Exception("Exchange 'binance' non trovato nel DB")
-
-            api_key_entry = (
-                session.query(APIKey)
-                .filter_by(user_id=user_id, exchange_id=exchange.id, is_testnet=False)
-                .first()
-            )
-
-            if not api_key_entry:
-                raise Exception(f"Nessuna API key trovata per user_id={user_id}")
-
-            return Client(api_key_entry.api_key, api_key_entry.secret_key)
-
     def get_balance(self, asset: str) -> float:
         """Get total balance (free + locked) for an asset"""
         bal = self.client.get_asset_balance(asset=asset)

@@ -167,6 +167,7 @@ def auto_execute_pending():
                     symbol_info = client.get_symbol_info(order.symbol)
                     filters = {f['filterType']: f for f in symbol_info['filters']}
                     step_size = float(filters['LOT_SIZE']['stepSize'])
+                    tick_size = float(filters['PRICE_FILTER']['tickSize'])
                     min_notional = float(filters['MIN_NOTIONAL']['minNotional']) if 'MIN_NOTIONAL' in filters else 0
 
                     qty = round_step_size(float(order.quantity), float(step_size))
@@ -195,6 +196,11 @@ def auto_execute_pending():
                     
                     # Format executed quantity for TP order
                     executed_qty_str = ('{:.8f}'.format(float(executed_qty))).rstrip('0').rstrip('.')
+                    
+                    # Format TP price properly to avoid scientific notation
+                    from decimal import Decimal, ROUND_DOWN
+                    tp_price_dec = Decimal(str(order.take_profit)).quantize(Decimal(str(tick_size)), rounding=ROUND_DOWN)
+                    tp_price_str = str(tp_price_dec).rstrip('0').rstrip('.')
 
                     # TP LIMIT - use actual executed quantity
                     tp_response = adapter.client.create_order(
@@ -203,7 +209,7 @@ def auto_execute_pending():
                         type='LIMIT',
                         timeInForce='GTC',
                         quantity=executed_qty_str,
-                        price=str(order.take_profit)
+                        price=tp_price_str
                     )
 
                     order.status = 'PARTIAL_FILLED' if is_partial else 'EXECUTED'
