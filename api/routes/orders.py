@@ -1094,6 +1094,27 @@ async def split_order(
             filters = {f['filterType']: f for f in symbol_info['filters']}
             step_size = float(filters['LOT_SIZE']['stepSize'])
             tick_size = float(filters['PRICE_FILTER']['tickSize'])
+            min_notional = float(filters.get('NOTIONAL', {}).get('minNotional', '5'))
+            min_qty = float(filters['LOT_SIZE'].get('minQty', '0.00001'))
+            
+            # Validate minimum order value for both parts
+            value1 = split_qty * float(split_data.tp1)
+            value2 = remaining_qty * float(split_data.tp2)
+            
+            if value1 < min_notional:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Part 1 order value (${value1:.2f}) is below minimum (${min_notional}). Increase split quantity or TP price."
+                )
+            if value2 < min_notional:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Part 2 order value (${value2:.2f}) is below minimum (${min_notional}). Decrease split quantity or increase TP price."
+                )
+            if split_qty < min_qty:
+                raise HTTPException(status_code=400, detail=f"Part 1 quantity {split_qty} is below minimum {min_qty}")
+            if remaining_qty < min_qty:
+                raise HTTPException(status_code=400, detail=f"Part 2 quantity {remaining_qty} is below minimum {min_qty}")
             
             def format_qty(qty):
                 from decimal import Decimal, ROUND_DOWN
