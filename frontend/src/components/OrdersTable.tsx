@@ -49,6 +49,8 @@ export function OrdersTable({
             max_entry: order.max_entry,
             take_profit: order.take_profit,
             stop_loss: order.stop_loss,
+            stop_interval: order.stop_interval,
+            entry_interval: order.entry_interval,
         });
     };
 
@@ -370,7 +372,26 @@ export function OrdersTable({
                                     )}
                                 </td>
                                 <td className="py-3 px-4 text-sm text-muted-foreground">
-                                    {type === "pending" ? order.entry_interval : order.stop_interval || "-"}
+                                    {isEditing ? (
+                                        <select
+                                            value={type === "pending" ? (editValues.entry_interval || "1m") : (editValues.stop_interval || "1h")}
+                                            onChange={(e) =>
+                                                type === "pending"
+                                                    ? setEditValues({ ...editValues, entry_interval: e.target.value })
+                                                    : setEditValues({ ...editValues, stop_interval: e.target.value })
+                                            }
+                                            className="w-20 px-2 py-1 rounded bg-muted border border-border text-sm"
+                                        >
+                                            <option value="1m">1m</option>
+                                            <option value="5m">5m</option>
+                                            <option value="15m">15m</option>
+                                            <option value="1h">1h</option>
+                                            <option value="4h">4h</option>
+                                            <option value="1d">1d</option>
+                                        </select>
+                                    ) : (
+                                        type === "pending" ? order.entry_interval : order.stop_interval || "-"
+                                    )}
                                 </td>
                                 <td className="py-3 px-4 text-sm text-muted-foreground">
                                     {formatDate(type === "closed" ? order.closed_at : order.created_at)}
