@@ -157,7 +157,10 @@ def auto_execute_pending():
                 decrypted_key = decrypt_api_key(api_key_obj.api_key, order.user_id)
                 decrypted_secret = decrypt_api_key(api_key_obj.secret_key, order.user_id)
 
-                adapter = BinanceAdapter(
+                # Use ExchangeFactory to create the correct adapter for this exchange
+                from src.exchange_factory import ExchangeFactory
+                adapter = ExchangeFactory.create(
+                    exchange_name=exchange_name,
                     api_key=decrypted_key,
                     api_secret=decrypted_secret,
                     testnet=is_testnet
