@@ -539,6 +539,8 @@ class OrderUpdate(BaseModel):
     max_entry: Optional[float] = None
     take_profit: Optional[float] = None
     stop_loss: Optional[float] = None
+    stop_interval: Optional[str] = None
+    entry_interval: Optional[str] = None
 
 
 class OrderResponse(BaseModel):
@@ -790,6 +792,10 @@ async def update_order(
         order.take_profit = Decimal(str(order_data.take_profit))
     if order_data.stop_loss is not None:
         order.stop_loss = Decimal(str(order_data.stop_loss))
+    if order_data.stop_interval is not None:
+        order.stop_interval = order_data.stop_interval
+    if order_data.entry_interval is not None:
+        order.entry_interval = order_data.entry_interval
     
     # If EXECUTED, update on exchange too
     if order.status == "EXECUTED" and (order_data.take_profit or order_data.stop_loss):
