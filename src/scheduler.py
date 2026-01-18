@@ -39,8 +39,25 @@ root.addHandler(fh)
 
 sched = BlockingScheduler()
 if __name__ == "__main__":
+    # Start WebSocket streams for real-time order updates
+    try:
+        from src.stream_manager import stream_manager
+        stream_manager.start()
+        root.info("WebSocket streams started for real-time updates")
+    except Exception as e:
+        root.warning(f"Could not start WebSocket streams: {e}")
+        root.info("Falling back to polling-only mode")
+    
     sched.configure(timezone=pytz.timezone("Europe/Rome"))
     sched.add_job(scheduled_job, 'interval', minutes=1, id='exec_pending')
-    sched.add_job(check_cancelled_tp_orders, 'interval', seconds=10, id='check_tp_cancelled')
-    root.info("Scheduler avviato: controllo ordini ogni minuto, check TP cancellati ogni 10 sec")
-    sched.start()
+    sched.add_job(check_cancelled_tp_orders, 'interval', seconds=60, id='check_tp_cancelled')
+    root.info("Scheduler started: orders every 1 min, TP check every 60 sec (fallback)")
+    
+    try:
+        sched.start()
+    except (KeyboardInterrupt, SystemExit):
+        try:
+            stream_manager.stop()
+        except:
+            pass
+        root.info("Scheduler stopped")
