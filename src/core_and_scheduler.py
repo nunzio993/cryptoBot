@@ -7,7 +7,7 @@ from src.adapters import BinanceAdapter
 
 import logging
 from types import SimpleNamespace
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import math
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
