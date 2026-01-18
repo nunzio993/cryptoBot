@@ -639,8 +639,11 @@ async def create_order(
     
     # Check USDC balance before creating order
     order_value = float(order_data.quantity) * float(order_data.max_entry)
+    print(f"[DEBUG] create_order: exchange={exchange_name}, order_value={order_value}")
     try:
+        print(f"[DEBUG] About to call get_balance for USDC")
         usdc_balance = adapter.get_balance("USDC")
+        print(f"[DEBUG] get_balance returned: {usdc_balance}")
         
         # Calculate already blocked USDC from pending orders
         pending_orders = db.query(Order).filter(
