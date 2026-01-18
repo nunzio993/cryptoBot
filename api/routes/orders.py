@@ -1128,9 +1128,8 @@ async def split_order(
             # NOW cancel the old TP order (only after validation passes)
             # We must cancel first to release liquidity, but will recreate if new TPs fail
             old_tp_order_id = order.tp_order_id
-            old_tp_price = format_price(order.take_profit) if order.take_profit else None
-            old_qty = format_qty(float(order.quantity))
             
+            # Define formatting functions first
             def format_qty(qty):
                 from decimal import Decimal, ROUND_DOWN
                 step = Decimal(str(step_size))
@@ -1146,7 +1145,7 @@ async def split_order(
             import logging
             logger = logging.getLogger('orders')
             
-            # Recalculate old values with proper formatting
+            # Calculate old values for potential rollback
             old_tp_price = format_price(order.take_profit) if order.take_profit else None
             old_qty = format_qty(float(order.quantity))
             
