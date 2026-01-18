@@ -459,10 +459,15 @@ def check_cancelled_tp_orders():
     The user can then manually recreate the TP or close the position.
     """
     with SessionLocal() as session:
-        # Get executed orders that have a tp_order_id
+        # Grace period: don't check orders created in the last 15 seconds
+        # This prevents race conditions where scheduler runs before API commit completes
+        grace_period = datetime.now(timezone.utc) - timedelta(seconds=15)
+        
+        # Get executed orders that have a tp_order_id and were created more than 60 seconds ago
         orders_with_tp = session.query(Order).filter(
             Order.status.in_(['EXECUTED', 'PARTIAL_FILLED']),
-            Order.tp_order_id != None
+            Order.tp_order_id != None,
+            Order.created_at < grace_period
         ).all()
         
         # Group orders by user and symbol to minimize API calls
