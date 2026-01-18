@@ -668,6 +668,10 @@ class BybitAdapter(ExchangeAdapter):
         # For market orders, get the execution details
         fills = []
         if order_type == "Market":
+            # Small delay to allow Bybit to process the order
+            import time
+            time.sleep(0.5)
+            
             # Get order execution details to populate fills
             try:
                 exec_result = self.session.get_order_history(
@@ -678,14 +682,21 @@ class BybitAdapter(ExchangeAdapter):
                 )
                 if exec_result['retCode'] == 0 and exec_result['result']['list']:
                     exec_order = exec_result['result']['list'][0]
-                    # Create Binance-compatible fills format
-                    fills = [{
-                        'qty': exec_order.get('cumExecQty', quantity),
-                        'price': exec_order.get('avgPrice', '0')
-                    }]
-            except:
-                # Fallback: use the quantity and current price
-                fills = [{'qty': quantity, 'price': '0'}]
+                    exec_qty = exec_order.get('cumExecQty', '0')
+                    # Only use if it's a valid non-zero quantity
+                    if exec_qty and float(exec_qty) > 0:
+                        fills = [{
+                            'qty': exec_qty,
+                            'price': exec_order.get('avgPrice', '0')
+                        }]
+            except Exception as e:
+                print(f"[BYBIT] Error getting order history: {e}")
+            
+            # Fallback: use the requested quantity if fills is empty
+            if not fills:
+                current_price = self.get_symbol_price(symbol)
+                fills = [{'qty': str(quantity), 'price': str(current_price)}]
+                print(f"[BYBIT] Using fallback fills: qty={quantity}, price={current_price}")
         
         # Return in Binance-compatible format
         return {
