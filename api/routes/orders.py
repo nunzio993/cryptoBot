@@ -1098,15 +1098,22 @@ async def split_order(
             )
             
             # Cancel ONLY the TP order for this specific position (using tp_order_id)
-            if order.tp_order_id:
+            # IMPORTANT: Clear tp_order_id immediately and commit to prevent race condition
+            # with scheduler's check_cancelled_tp_orders which runs every 10 seconds
+            old_tp_order_id = order.tp_order_id
+            if old_tp_order_id:
+                # Clear tp_order_id FIRST to prevent scheduler from checking it
+                order.tp_order_id = None
+                db.commit()
+                
                 try:
                     adapter.client.cancel_order(
                         symbol=order.symbol,
-                        orderId=int(order.tp_order_id)
+                        orderId=int(old_tp_order_id)
                     )
                 except Exception as e:
                     import logging
-                    logging.getLogger('orders').warning(f"[SPLIT] Could not cancel TP order {order.tp_order_id}: {e}")
+                    logging.getLogger('orders').warning(f"[SPLIT] Could not cancel TP order {old_tp_order_id}: {e}")
             
             # Get symbol info for quantity formatting
             symbol_info = adapter.client.get_symbol_info(order.symbol)
