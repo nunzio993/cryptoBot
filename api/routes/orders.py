@@ -1200,7 +1200,14 @@ async def split_order(
     except Exception as e:
         # Rollback DB changes if exchange update fails
         db.rollback()
-        raise HTTPException(status_code=400, detail=f"Failed to update TP orders on exchange: {str(e)}")
+        error_str = str(e)
+        # Provide user-friendly error for common issues
+        if "NOTIONAL" in error_str or "-1013" in error_str:
+            raise HTTPException(
+                status_code=400, 
+                detail="Order value too small. Each split must be worth at least $5 (Binance minimum). Try splitting into fewer parts."
+            )
+        raise HTTPException(status_code=400, detail=f"Failed to update TP orders on exchange: {error_str}")
     
     db.commit()
     db.refresh(order)
