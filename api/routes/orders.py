@@ -603,7 +603,8 @@ async def list_orders(
 async def create_order(
     order_data: OrderCreate,
     network_mode: str = Query("Testnet", description="Testnet or Mainnet"),
-    exchange_name: str = Query("binance", description="Exchange: binance, bybit"),
+    exchange_name: str = Query("binance", description="Exchange: binance, bybit (deprecated, use api_key_id)"),
+    api_key_id: Optional[int] = Query(None, description="API key ID - if provided, exchange is inferred from this"),
     current_user: User = Depends(get_current_user),
     db=Depends(get_db)
 ):
@@ -614,16 +615,28 @@ async def create_order(
     if order_data.max_entry < order_data.entry_price:
         raise HTTPException(status_code=400, detail="Max Entry must be >= Entry Price")
     
-    # Get API key for specified exchange
-    exchange = db.query(Exchange).filter_by(name=exchange_name.lower()).first()
-    if not exchange:
-        raise HTTPException(status_code=400, detail=f"Exchange '{exchange_name}' not found")
-    
-    key = db.query(APIKey).filter_by(
-        user_id=current_user.id,
-        exchange_id=exchange.id,
-        is_testnet=(network_mode == "Testnet")
-    ).first()
+    # Get API key - prefer api_key_id if provided
+    if api_key_id:
+        key = db.query(APIKey).filter(
+            APIKey.id == api_key_id,
+            APIKey.user_id == current_user.id
+        ).first()
+        if not key:
+            raise HTTPException(status_code=400, detail="API key not found")
+        exchange = db.query(Exchange).filter_by(id=key.exchange_id).first()
+        exchange_name = exchange.name
+        print(f"[DEBUG] Using api_key_id={api_key_id}, inferred exchange={exchange_name}")
+    else:
+        # Fallback to exchange_name parameter
+        exchange = db.query(Exchange).filter_by(name=exchange_name.lower()).first()
+        if not exchange:
+            raise HTTPException(status_code=400, detail=f"Exchange '{exchange_name}' not found")
+        
+        key = db.query(APIKey).filter_by(
+            user_id=current_user.id,
+            exchange_id=exchange.id,
+            is_testnet=(network_mode == "Testnet")
+        ).first()
     
     if not key:
         raise HTTPException(status_code=400, detail=f"No API key configured for {exchange_name} {network_mode}")
