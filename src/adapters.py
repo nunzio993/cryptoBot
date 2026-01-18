@@ -518,7 +518,12 @@ class BybitAdapter(ExchangeAdapter):
                         },
                         {
                             'filterType': 'NOTIONAL',
-                            'minNotional': info.get('lotSizeFilter', {}).get('minOrderAmt', '1'),
+                            'minNotional': info.get('lotSizeFilter', {}).get('minOrderAmt', '5'),
+                        },
+                        {
+                            # Also add MIN_NOTIONAL for Binance scheduler compatibility
+                            'filterType': 'MIN_NOTIONAL',
+                            'minNotional': info.get('lotSizeFilter', {}).get('minOrderAmt', '5'),
                         }
                     ]
                 }

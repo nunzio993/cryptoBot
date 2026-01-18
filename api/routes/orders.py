@@ -461,6 +461,15 @@ async def create_order_from_holding(
             detail=f"Quantity {qty} is below minimum {min_qty}"
         )
     
+    # Check minimum order value (notional)
+    min_notional = float(filters.get('NOTIONAL', {}).get('minNotional', '5'))
+    order_value = float(qty) * float(tp_price)
+    if order_value < min_notional:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Order value (${order_value:.2f}) is below minimum (${min_notional}). Increase quantity or TP price."
+        )
+    
     # Place TP LIMIT order on exchange
     tp_order_id = None
     try:
