@@ -49,10 +49,10 @@ export function NewOrderForm({ networkMode, apiKeyId, onSuccess }: NewOrderFormP
             quantity: number;
             entry_price: number;
             max_entry: number;
-            take_profit: number;
-            stop_loss: number;
-            entry_interval: string;
-            stop_interval: string;
+            take_profit?: number;
+            stop_loss?: number;
+            entry_interval?: string;
+            stop_interval?: string;
         }) => ordersApi.create(data, networkMode),
         onSuccess: () => {
             setError("");
@@ -95,8 +95,8 @@ export function NewOrderForm({ networkMode, apiKeyId, onSuccess }: NewOrderFormP
         const quantity = parseFloat(formData.quantity);
         const entryPrice = parseFloat(formData.entry_price);
         const maxEntry = parseFloat(formData.max_entry);
-        const takeProfit = parseFloat(formData.take_profit);
-        const stopLoss = parseFloat(formData.stop_loss);
+        const takeProfit = formData.take_profit ? parseFloat(formData.take_profit) : undefined;
+        const stopLoss = formData.stop_loss ? parseFloat(formData.stop_loss) : undefined;
 
         // Validation
         if (!formData.symbol) {
@@ -107,9 +107,12 @@ export function NewOrderForm({ networkMode, apiKeyId, onSuccess }: NewOrderFormP
             setError("Invalid quantity");
             return;
         }
-        if (!(stopLoss < entryPrice && entryPrice < takeProfit)) {
-            setError("Must be: Stop Loss < Entry Price < Take Profit");
-            return;
+        // Only validate TP/SL relationship if both are provided
+        if (takeProfit !== undefined && stopLoss !== undefined) {
+            if (!(stopLoss < entryPrice && entryPrice < takeProfit)) {
+                setError("Must be: Stop Loss < Entry Price < Take Profit");
+                return;
+            }
         }
         if (maxEntry < entryPrice) {
             setError("Max Entry must be >= Entry Price");
@@ -123,8 +126,8 @@ export function NewOrderForm({ networkMode, apiKeyId, onSuccess }: NewOrderFormP
             max_entry: maxEntry,
             take_profit: takeProfit,
             stop_loss: stopLoss,
-            entry_interval: formData.entry_interval,
-            stop_interval: formData.stop_interval,
+            entry_interval: formData.entry_interval || undefined,
+            stop_interval: formData.stop_interval || undefined,
         });
     };
 

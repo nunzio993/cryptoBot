@@ -381,18 +381,19 @@ function SetTPSLModal({ holding, apiKeyId, onClose, onSuccess }: SetTPSLModalPro
         setError("");
 
         const qty = parseFloat(quantity);
-        const tp = parseFloat(takeProfit);
-        const sl = parseFloat(stopLoss);
+        const tp = takeProfit ? parseFloat(takeProfit) : undefined;
+        const sl = stopLoss ? parseFloat(stopLoss) : undefined;
 
         if (qty <= 0 || qty > holding.quantity) {
             setError(`Quantity must be between 0 and ${holding.quantity}`);
             return;
         }
-        if (tp <= entryPrice) {
+        // Only validate TP/SL if provided
+        if (tp !== undefined && tp <= entryPrice) {
             setError("Take Profit must be higher than current price");
             return;
         }
-        if (sl >= entryPrice) {
+        if (sl !== undefined && sl >= entryPrice) {
             setError("Stop Loss must be lower than current price");
             return;
         }

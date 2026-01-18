@@ -381,8 +381,8 @@ class OrderCreate(BaseModel):
     max_entry: float
     take_profit: Optional[float] = None
     stop_loss: Optional[float] = None
-    entry_interval: str
-    stop_interval: str
+    entry_interval: Optional[str] = "1m"
+    stop_interval: Optional[str] = "1h"
 
 
 class HoldingOrderCreate(BaseModel):
@@ -391,7 +391,7 @@ class HoldingOrderCreate(BaseModel):
     entry_price: float
     take_profit: Optional[float] = None
     stop_loss: Optional[float] = None
-    stop_interval: str
+    stop_interval: Optional[str] = "1h"
     api_key_id: int
 
 
