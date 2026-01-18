@@ -284,14 +284,26 @@ class BybitAdapter(ExchangeAdapter):
         return 8  # fallback
     
     def get_balance(self, asset: str) -> float:
-        """Get total balance for an asset"""
+        """Get total balance for an asset - checks both UNIFIED and SPOT accounts"""
         try:
+            # Try UNIFIED account first (UTA - Unified Trading Account)
             result = self.session.get_wallet_balance(accountType="UNIFIED")
             if result['retCode'] == 0:
                 coins = result['result']['list'][0].get('coin', [])
                 for coin in coins:
                     if coin['coin'] == asset:
+                        bal = float(coin.get('walletBalance', 0))
+                        if bal > 0:
+                            return bal
+            
+            # Try SPOT account as fallback
+            result = self.session.get_wallet_balance(accountType="SPOT")
+            if result['retCode'] == 0:
+                coins = result['result']['list'][0].get('coin', [])
+                for coin in coins:
+                    if coin['coin'] == asset:
                         return float(coin.get('walletBalance', 0))
+            
             return 0.0
         except Exception as e:
             print(f"Bybit get_balance error: {e}")
