@@ -488,8 +488,14 @@ def check_cancelled_tp_orders():
                 open_orders = adapter.get_open_orders(symbol)
                 open_order_ids = {str(o['orderId']) for o in open_orders}
                 
+                # Debug logging
+                tlogger.info(f"[TP_CHECK] {exchange_name} {symbol}: Found {len(open_orders)} open orders: {list(open_order_ids)[:10]}")
+                
                 # Check each order's TP
                 for order in user_orders:
+                    tp_id_str = str(order.tp_order_id) if order.tp_order_id else None
+                    tlogger.info(f"[TP_CHECK] Order {order.id}: tp_order_id={tp_id_str}, in_open={tp_id_str in open_order_ids if tp_id_str else 'N/A'}")
+                    
                     if order.tp_order_id and str(order.tp_order_id) not in open_order_ids:
                         # TP was cancelled externally - mark order as closed
                         tlogger.warning(f"[TP_CANCELLED] Order {order.id} ({order.symbol}): TP order {order.tp_order_id} cancelled externally")
