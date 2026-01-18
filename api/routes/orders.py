@@ -379,8 +379,8 @@ class OrderCreate(BaseModel):
     quantity: float
     entry_price: float
     max_entry: float
-    take_profit: float
-    stop_loss: float
+    take_profit: Optional[float] = None
+    stop_loss: Optional[float] = None
     entry_interval: str
     stop_interval: str
 
@@ -389,8 +389,8 @@ class HoldingOrderCreate(BaseModel):
     symbol: str
     quantity: float
     entry_price: float
-    take_profit: float
-    stop_loss: float
+    take_profit: Optional[float] = None
+    stop_loss: Optional[float] = None
     stop_interval: str
     api_key_id: int
 
@@ -447,13 +447,12 @@ async def create_order_from_holding(
             detail=f"Insufficient {asset_name} balance. You have {free_balance:.8f} but need at least {min_qty}"
         )
     
-    # Format quantity and price
+    # Format quantity
     from decimal import Decimal, ROUND_DOWN
     
     # Use the smaller of requested quantity or available balance
     qty_to_use = min(order_data.quantity, free_balance)
     qty = Decimal(str(qty_to_use)).quantize(Decimal(str(step_size)), rounding=ROUND_DOWN)
-    tp_price = Decimal(str(order_data.take_profit)).quantize(Decimal(str(tick_size)), rounding=ROUND_DOWN)
     
     if float(qty) < min_qty:
         raise HTTPException(
@@ -461,29 +460,34 @@ async def create_order_from_holding(
             detail=f"Quantity {qty} is below minimum {min_qty}"
         )
     
-    # Check minimum order value (notional)
-    min_notional = float(filters.get('NOTIONAL', {}).get('minNotional', '5'))
-    order_value = float(qty) * float(tp_price)
-    if order_value < min_notional:
-        raise HTTPException(
-            status_code=400, 
-            detail=f"Order value (${order_value:.2f}) is below minimum (${min_notional}). Increase quantity or TP price."
-        )
-    
-    # Place TP LIMIT order on exchange
+    # Place TP LIMIT order on exchange only if take_profit is provided
     tp_order_id = None
-    try:
-        tp_response = adapter.client.create_order(
-            symbol=order_data.symbol,
-            side='SELL',
-            type='LIMIT',
-            timeInForce='GTC',
-            quantity=str(qty),
-            price=str(tp_price)
-        )
-        tp_order_id = str(tp_response.get('orderId'))
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to place TP order on exchange: {str(e)}")
+    tp_price_value = None
+    if order_data.take_profit:
+        tp_price = Decimal(str(order_data.take_profit)).quantize(Decimal(str(tick_size)), rounding=ROUND_DOWN)
+        tp_price_value = float(tp_price)
+        
+        # Check minimum order value (notional)
+        min_notional = float(filters.get('NOTIONAL', {}).get('minNotional', '5'))
+        order_value = float(qty) * float(tp_price)
+        if order_value < min_notional:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Order value (${order_value:.2f}) is below minimum (${min_notional}). Increase quantity or TP price."
+            )
+        
+        try:
+            tp_response = adapter.client.create_order(
+                symbol=order_data.symbol,
+                side='SELL',
+                type='LIMIT',
+                timeInForce='GTC',
+                quantity=str(qty),
+                price=str(tp_price)
+            )
+            tp_order_id = str(tp_response.get('orderId'))
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Failed to place TP order on exchange: {str(e)}")
     
     # Create order in EXECUTED state (we already own the crypto)
     order = Order(
@@ -493,7 +497,7 @@ async def create_order_from_holding(
         quantity=float(qty),
         entry_price=order_data.entry_price,
         max_entry=order_data.entry_price,
-        take_profit=float(tp_price),
+        take_profit=tp_price_value,
         stop_loss=order_data.stop_loss,
         entry_interval="1m",
         stop_interval=order_data.stop_interval,
@@ -526,7 +530,7 @@ async def create_order_from_holding(
         "closed_at": None,
         "created_at": order.created_at.isoformat() if order.created_at else None,
         "is_testnet": order.is_testnet,
-        "message": "TP order placed on exchange"
+        "message": "TP order placed on exchange" if tp_order_id else "Order created without TP (add TP later)"
     }
 
 
