@@ -80,10 +80,18 @@ async def handle_tp_cancelled(order: Order, event: Dict, session):
     """Handle TP order cancelled - either externally or by user."""
     logger.warning(f"[TP_CANCELLED] Order {order.id} ({order.symbol}): TP {order.tp_order_id} cancelled")
     
-    # Check if this was a split operation in progress
-    # If so, don't mark as closed - the split handler will manage it
-    if hasattr(order, '_split_in_progress') and order._split_in_progress:
-        logger.info(f"[TP_CANCELLED] Order {order.id}: Split in progress, skipping auto-close")
+    # CRITICAL: Re-fetch the order to get the latest state
+    # This prevents race condition where split/update already cleared tp_order_id
+    session.refresh(order)
+    
+    # If tp_order_id is already None, it means split/update already handled this
+    if not order.tp_order_id:
+        logger.info(f"[TP_CANCELLED] Order {order.id}: tp_order_id already cleared, skipping")
+        return
+    
+    # Check if the cancelled order ID matches what we expect
+    if str(order.tp_order_id) != str(event.get('order_id')):
+        logger.info(f"[TP_CANCELLED] Order {order.id}: TP ID mismatch, skipping (got {event.get('order_id')}, expected {order.tp_order_id})")
         return
     
     order.status = 'CLOSED_EXTERNALLY'
