@@ -1126,22 +1126,10 @@ async def split_order(
                 raise HTTPException(status_code=400, detail=f"Part 2 quantity {remaining_qty} is below minimum {min_qty}")
             
             # NOW cancel the old TP order (only after validation passes)
-            # Clear tp_order_id immediately and commit to prevent race condition
-            # with scheduler's check_cancelled_tp_orders which runs every 10 seconds
+            # We must cancel first to release liquidity, but will recreate if new TPs fail
             old_tp_order_id = order.tp_order_id
-            if old_tp_order_id:
-                # Clear tp_order_id FIRST to prevent scheduler from checking it
-                order.tp_order_id = None
-                db.commit()
-                
-                try:
-                    adapter.client.cancel_order(
-                        symbol=order.symbol,
-                        orderId=int(old_tp_order_id)
-                    )
-                except Exception as e:
-                    import logging
-                    logging.getLogger('orders').warning(f"[SPLIT] Could not cancel TP order {old_tp_order_id}: {e}")
+            old_tp_price = format_price(order.take_profit) if order.take_profit else None
+            old_qty = format_qty(float(order.quantity))
             
             def format_qty(qty):
                 from decimal import Decimal, ROUND_DOWN
@@ -1158,6 +1146,42 @@ async def split_order(
             import logging
             logger = logging.getLogger('orders')
             
+            # Recalculate old values with proper formatting
+            old_tp_price = format_price(order.take_profit) if order.take_profit else None
+            old_qty = format_qty(float(order.quantity))
+            
+            # Cancel old TP first to release liquidity
+            if old_tp_order_id:
+                order.tp_order_id = None
+                db.commit()
+                
+                try:
+                    adapter.client.cancel_order(
+                        symbol=order.symbol,
+                        orderId=int(old_tp_order_id)
+                    )
+                    logger.info(f"[SPLIT] Cancelled old TP order {old_tp_order_id}")
+                except Exception as e:
+                    logger.warning(f"[SPLIT] Could not cancel old TP order {old_tp_order_id}: {e}")
+            
+            # Helper to recreate old TP if split fails
+            def recreate_old_tp():
+                if old_tp_price and old_qty:
+                    try:
+                        resp = adapter.client.create_order(
+                            symbol=order.symbol,
+                            side='SELL',
+                            type='LIMIT',
+                            timeInForce='GTC',
+                            quantity=old_qty,
+                            price=old_tp_price
+                        )
+                        order.tp_order_id = str(resp.get('orderId'))
+                        db.commit()
+                        logger.info(f"[SPLIT] Recreated old TP: {order.tp_order_id}")
+                    except Exception as e:
+                        logger.error(f"[SPLIT] CRITICAL: Could not recreate old TP: {e}")
+            
             # Create TP order for part 1
             qty1_str = format_qty(split_qty)
             price1_str = format_price(split_data.tp1)
@@ -1173,10 +1197,10 @@ async def split_order(
                     price=price1_str
                 )
                 logger.info(f"[SPLIT] TP1 created: orderId={resp1.get('orderId')}")
-                # Save TP order ID for part 1
-                order.tp_order_id = str(resp1.get('orderId'))
             except Exception as e1:
                 logger.error(f"[SPLIT] Failed to create TP1: {e1}")
+                # Recreate old TP to restore original state
+                recreate_old_tp()
                 raise
             
             # Create TP order for part 2
@@ -1194,16 +1218,20 @@ async def split_order(
                     price=price2_str
                 )
                 logger.info(f"[SPLIT] TP2 created: orderId={resp2.get('orderId')}")
-                # Save TP order ID for part 2
-                new_order.tp_order_id = str(resp2.get('orderId'))
             except Exception as e2:
                 logger.error(f"[SPLIT] Failed to create TP2: {e2}")
-                # Try to cancel TP1 if TP2 fails
+                # Cancel TP1 and recreate old TP
                 try:
                     adapter.client.cancel_order(symbol=order.symbol, orderId=resp1.get('orderId'))
+                    logger.info(f"[SPLIT] Cancelled TP1 due to TP2 failure")
                 except:
                     pass
+                recreate_old_tp()
                 raise
+            
+            # BOTH TPs created successfully - save new IDs
+            order.tp_order_id = str(resp1.get('orderId'))
+            new_order.tp_order_id = str(resp2.get('orderId'))
             
     except Exception as e:
         # Rollback DB changes if exchange update fails
