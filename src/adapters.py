@@ -285,28 +285,43 @@ class BybitAdapter(ExchangeAdapter):
     
     def get_balance(self, asset: str) -> float:
         """Get total balance for an asset - checks both UNIFIED and SPOT accounts"""
+        import logging
+        logger = logging.getLogger('bybit_debug')
+        
         try:
             # Try UNIFIED account first (UTA - Unified Trading Account)
+            logger.info(f"[BYBIT] Checking UNIFIED balance for {asset}")
             result = self.session.get_wallet_balance(accountType="UNIFIED")
+            logger.info(f"[BYBIT] UNIFIED response: retCode={result.get('retCode')}")
+            
             if result['retCode'] == 0:
                 coins = result['result']['list'][0].get('coin', [])
+                logger.info(f"[BYBIT] UNIFIED coins found: {[c['coin'] for c in coins]}")
                 for coin in coins:
                     if coin['coin'] == asset:
                         bal = float(coin.get('walletBalance', 0))
+                        logger.info(f"[BYBIT] Found {asset} in UNIFIED: {bal}")
                         if bal > 0:
                             return bal
             
             # Try SPOT account as fallback
+            logger.info(f"[BYBIT] Checking SPOT balance for {asset}")
             result = self.session.get_wallet_balance(accountType="SPOT")
+            logger.info(f"[BYBIT] SPOT response: retCode={result.get('retCode')}")
+            
             if result['retCode'] == 0:
                 coins = result['result']['list'][0].get('coin', [])
+                logger.info(f"[BYBIT] SPOT coins found: {[c['coin'] for c in coins]}")
                 for coin in coins:
                     if coin['coin'] == asset:
-                        return float(coin.get('walletBalance', 0))
+                        bal = float(coin.get('walletBalance', 0))
+                        logger.info(f"[BYBIT] Found {asset} in SPOT: {bal}")
+                        return bal
             
+            logger.warning(f"[BYBIT] {asset} not found in any account")
             return 0.0
         except Exception as e:
-            print(f"Bybit get_balance error: {e}")
+            logger.error(f"[BYBIT] get_balance error: {e}")
             return 0.0
     
     def get_symbol_price(self, symbol: str) -> float:
