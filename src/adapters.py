@@ -635,6 +635,10 @@ class BybitAdapter(ExchangeAdapter):
             "qty": str(quantity),
         }
         
+        # For market orders, specify that qty is in base currency (e.g., BNB, not USDC)
+        if order_type == "Market":
+            params["marketUnit"] = "baseCoin"
+        
         if order_type == "Limit" and price:
             # Format price according to tickSize
             try:
@@ -659,15 +663,40 @@ class BybitAdapter(ExchangeAdapter):
         if result['retCode'] != 0:
             raise Exception(f"Bybit order failed: {result['retMsg']}")
         
+        order_result = result['result']
+        
+        # For market orders, get the execution details
+        fills = []
+        if order_type == "Market":
+            # Get order execution details to populate fills
+            try:
+                exec_result = self.session.get_order_history(
+                    category="spot",
+                    symbol=formatted_symbol,
+                    orderId=order_result.get('orderId'),
+                    limit=1
+                )
+                if exec_result['retCode'] == 0 and exec_result['result']['list']:
+                    exec_order = exec_result['result']['list'][0]
+                    # Create Binance-compatible fills format
+                    fills = [{
+                        'qty': exec_order.get('cumExecQty', quantity),
+                        'price': exec_order.get('avgPrice', '0')
+                    }]
+            except:
+                # Fallback: use the quantity and current price
+                fills = [{'qty': quantity, 'price': '0'}]
+        
         # Return in Binance-compatible format
         return {
-            'orderId': result['result'].get('orderId'),
+            'orderId': order_result.get('orderId'),
             'symbol': symbol,
             'side': side,
             'type': type,
             'origQty': quantity,
             'price': price,
-            'status': 'NEW'
+            'status': 'NEW',
+            'fills': fills  # Add fills for scheduler compatibility
         }
     
     def get_symbol_ticker(self, symbol: str) -> dict:
