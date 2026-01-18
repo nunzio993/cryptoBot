@@ -124,10 +124,10 @@ export const ordersApi = {
         quantity: number;
         entry_price: number;
         max_entry: number;
-        take_profit: number;
-        stop_loss: number;
-        entry_interval: string;
-        stop_interval: string;
+        take_profit?: number;
+        stop_loss?: number;
+        entry_interval?: string;
+        stop_interval?: string;
     }, networkMode: string = "Testnet") =>
         api.post<Order>("/orders", data, { params: { network_mode: networkMode } }),
 
@@ -135,9 +135,9 @@ export const ordersApi = {
         symbol: string;
         quantity: number;
         entry_price: number;
-        take_profit: number;
-        stop_loss: number;
-        stop_interval: string;
+        take_profit?: number;
+        stop_loss?: number;
+        stop_interval?: string;
         api_key_id: number;
     }) => api.post<Order>("/orders/from-holding", data),
 
