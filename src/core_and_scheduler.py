@@ -539,6 +539,15 @@ def main():
     tlogger.info("CryptoBot Scheduler Started")
     tlogger.info("=" * 50)
     
+    # Start WebSocket streams for real-time order updates
+    try:
+        from src.stream_manager import stream_manager
+        stream_manager.start()
+        tlogger.info("WebSocket streams started for real-time updates")
+    except Exception as e:
+        tlogger.warning(f"Could not start WebSocket streams: {e}")
+        tlogger.info("Falling back to polling-only mode")
+    
     scheduler = BlockingScheduler()
     
     # Check pending orders every minute
@@ -550,20 +559,25 @@ def main():
     # Sync with exchanges every 5 minutes
     scheduler.add_job(sync_orders, 'interval', minutes=5, id='sync_exchanges')
     
-    # Check for externally cancelled TP orders every 10 seconds
-    scheduler.add_job(check_cancelled_tp_orders, 'interval', seconds=10, id='check_tp_cancelled')
+    # Check for externally cancelled TP orders every 60 seconds (fallback for WebSocket)
+    scheduler.add_job(check_cancelled_tp_orders, 'interval', seconds=60, id='check_tp_cancelled')
     
     tlogger.info("Scheduler jobs registered:")
     tlogger.info("  - auto_execute_pending: every 1 min")
     tlogger.info("  - check_and_execute_stop_loss: every 1 min")
     tlogger.info("  - sync_orders: every 5 min")
-    tlogger.info("  - check_cancelled_tp_orders: every 10 sec")
+    tlogger.info("  - check_cancelled_tp_orders: every 60 sec (fallback)")
     tlogger.info("")
     tlogger.info("Press CTRL+C to stop")
     
     try:
         scheduler.start()
     except (KeyboardInterrupt, SystemExit):
+        # Stop WebSocket streams on shutdown
+        try:
+            stream_manager.stop()
+        except:
+            pass
         tlogger.info("Scheduler stopped")
 
 
