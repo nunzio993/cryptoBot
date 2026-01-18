@@ -870,6 +870,11 @@ async def update_order(
                 pass  # If price check fails, allow the update
             
             try:
+                # Clear tp_order_id BEFORE cancelling to prevent race condition with TP_CHECK
+                old_tp_order_id = order.tp_order_id
+                order.tp_order_id = None
+                db.commit()  # Commit immediately so TP_CHECK doesn't see the cancelled TP
+                
                 # Pass existing tp_order_id for accurate cancellation
                 new_tp_order_id = adapter.update_spot_tp_sl(
                     order.symbol,
@@ -878,12 +883,15 @@ async def update_order(
                     float(order.stop_loss),
                     user_id=current_user.id,
                     old_tp=old_tp,
-                    tp_order_id=order.tp_order_id
+                    tp_order_id=old_tp_order_id
                 )
                 # Save new tp_order_id
                 if new_tp_order_id:
                     order.tp_order_id = new_tp_order_id
             except Exception as e:
+                # Restore tp_order_id if update failed
+                order.tp_order_id = old_tp_order_id
+                db.commit()
                 raise HTTPException(status_code=400, detail=f"Failed to update on exchange: {str(e)}")
     
     db.commit()
