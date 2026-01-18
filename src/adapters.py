@@ -156,6 +156,13 @@ class BinanceAdapter(ExchangeAdapter):
                 # Use format to avoid scientific notation
                 return f"{float(result):.10f}".rstrip('0').rstrip('.')
             
+            # IMPORTANT: Validate MIN_NOTIONAL BEFORE cancelling old TP
+            # This prevents orphaned positions when new TP creation would fail
+            min_notional = float(filters.get('NOTIONAL', filters.get('MIN_NOTIONAL', {})).get('minNotional', 5))
+            order_value = float(quantity) * float(new_tp)
+            if order_value < min_notional:
+                raise ValueError(f"Order value ${order_value:.2f} is below minimum ${min_notional}. Cannot update TP.")
+            
             # Cancel existing TP order
             if tp_order_id:
                 # Best case: we know the exact order ID
@@ -400,6 +407,14 @@ class BybitAdapter(ExchangeAdapter):
         
         try:
             formatted = self._format_symbol(symbol)
+            
+            # IMPORTANT: Validate MIN_NOTIONAL BEFORE cancelling old TP
+            # This prevents orphaned positions when new TP creation would fail
+            # Bybit minimum is typically $1, but we use $5 as safe default
+            min_notional = 5.0  # Bybit spot minimum order value
+            order_value = float(quantity) * float(new_tp)
+            if order_value < min_notional:
+                raise ValueError(f"Order value ${order_value:.2f} is below minimum ${min_notional}. Cannot update TP.")
             
             # Cancel existing TP order
             if tp_order_id:
