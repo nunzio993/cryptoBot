@@ -96,18 +96,22 @@ class StreamManager:
     
     def _start_stream_for_key(self, api_key: APIKey, exchange_name: str):
         """Start WebSocket stream for a specific API key."""
-        from src.crypto_utils import decrypt_api_key
+        # Use the same approach as the scheduler which works
+        from src.core_and_scheduler import get_exchange_adapter
         
-        decrypted_key = decrypt_api_key(api_key.api_key, api_key.user_id)
-        decrypted_secret = decrypt_api_key(api_key.secret_key, api_key.user_id)
+        try:
+            adapter = get_exchange_adapter(
+                user_id=api_key.user_id,
+                exchange_name=exchange_name,
+                is_testnet=api_key.is_testnet
+            )
+        except Exception as e:
+            logger.error(f"[STREAM] Failed to get adapter for user {api_key.user_id}: {e}")
+            return
         
         if exchange_name.lower() == 'binance':
-            # Create Binance client for listen key management
-            from binance.client import Client
-            if api_key.is_testnet:
-                client = Client(decrypted_key, decrypted_secret, testnet=True)
-            else:
-                client = Client(decrypted_key, decrypted_secret)
+            # Use the client from the adapter
+            client = adapter.client
             
             # Schedule async start on background loop
             future = asyncio.run_coroutine_threadsafe(
@@ -122,6 +126,11 @@ class StreamManager:
             # Don't wait for result to avoid blocking
             
         elif exchange_name.lower() == 'bybit':
+            # For Bybit we need the raw keys, get them from adapter
+            from src.crypto_utils import decrypt_api_key
+            decrypted_key = decrypt_api_key(api_key.api_key, api_key.user_id)
+            decrypted_secret = decrypt_api_key(api_key.secret_key, api_key.user_id)
+            
             future = asyncio.run_coroutine_threadsafe(
                 self.ws_manager.start_bybit_stream(
                     user_id=api_key.user_id,
