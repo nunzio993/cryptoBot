@@ -147,9 +147,14 @@ class BinanceAdapter(ExchangeAdapter):
             
             def format_price(price):
                 tick = Decimal(str(tick_size)).normalize()
-                price_dec = Decimal(str(price))
+                # Handle both Decimal and float inputs, avoid scientific notation
+                if isinstance(price, Decimal):
+                    price_dec = price
+                else:
+                    price_dec = Decimal(str(float(price)))
                 result = (price_dec / tick).quantize(Decimal('1'), rounding=ROUND_DOWN) * tick
-                return str(result.normalize())
+                # Use format to avoid scientific notation
+                return f"{float(result):.10f}".rstrip('0').rstrip('.')
             
             # Cancel existing TP order
             if tp_order_id:
