@@ -567,17 +567,34 @@ class BybitAdapter(ExchangeAdapter):
         """Create order - Binance-compatible signature"""
         order_type = "Market" if type.upper() == 'MARKET' else "Limit"
         order_side = side.capitalize()
+        formatted_symbol = self._format_symbol(symbol)
         
         params = {
             "category": "spot",
-            "symbol": self._format_symbol(symbol),
+            "symbol": formatted_symbol,
             "side": order_side,
             "orderType": order_type,
             "qty": str(quantity),
         }
         
         if order_type == "Limit" and price:
-            params["price"] = str(price)
+            # Format price according to tickSize
+            try:
+                instrument_info = self.session.get_instruments_info(category="spot", symbol=formatted_symbol)
+                if instrument_info['retCode'] == 0 and instrument_info['result']['list']:
+                    tick_size = instrument_info['result']['list'][0].get('priceFilter', {}).get('tickSize', '0.01')
+                    # Count decimal places in tickSize
+                    if '.' in tick_size:
+                        decimals = len(tick_size.split('.')[1].rstrip('0'))
+                    else:
+                        decimals = 0
+                    formatted_price = f"{float(price):.{decimals}f}"
+                else:
+                    formatted_price = str(price)
+            except:
+                formatted_price = str(price)
+            
+            params["price"] = formatted_price
             params["timeInForce"] = timeInForce or "GTC"
         
         result = self.session.place_order(**params)
