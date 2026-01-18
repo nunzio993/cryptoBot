@@ -470,14 +470,16 @@ def check_cancelled_tp_orders():
             Order.created_at < grace_period
         ).all()
         
-        # Group orders by user and symbol to minimize API calls
+        # Group orders by user, exchange, and symbol to minimize API calls
+        # IMPORTANT: Must include exchange_id to avoid using wrong adapter
         from collections import defaultdict
-        orders_by_user_symbol = defaultdict(list)
+        orders_by_user_exchange_symbol = defaultdict(list)
         for order in orders_with_tp:
-            key = (order.user_id, order.symbol, getattr(order, 'is_testnet', False) or False)
-            orders_by_user_symbol[key].append(order)
+            exchange_id = getattr(order, 'exchange_id', None) or 1  # Default to binance
+            key = (order.user_id, exchange_id, order.symbol, getattr(order, 'is_testnet', False) or False)
+            orders_by_user_exchange_symbol[key].append(order)
         
-        for (user_id, symbol, is_testnet), user_orders in orders_by_user_symbol.items():
+        for (user_id, exchange_id, symbol, is_testnet), user_orders in orders_by_user_exchange_symbol.items():
             try:
                 # Get first order to determine exchange
                 first_order = user_orders[0]
