@@ -112,13 +112,8 @@ class OrderService:
     @staticmethod
     def _place_market_buy(adapter, symbol: str, quantity: float):
         """Place market buy - works for all exchanges"""
-        if hasattr(adapter, 'client') and hasattr(adapter.client, 'order_market_buy'):
-            # Binance
-            qty_str = ('{:.8f}'.format(quantity)).rstrip('0').rstrip('.')
-            return adapter.client.order_market_buy(symbol=symbol, quantity=qty_str)
-        else:
-            # Bybit/ccxt
-            return adapter.place_order(symbol=symbol, side='BUY', type_='MARKET', quantity=quantity)
+        # Use adapter.place_order which handles both Binance and Bybit
+        return adapter.place_order(symbol=symbol, side='BUY', type_='MARKET', quantity=quantity)
     
     @staticmethod
     def _execute_market_order(session, order: Order, adapter) -> None:
@@ -215,18 +210,13 @@ class OrderService:
             try:
                 # First cancel any open TP/SL orders for this symbol to unlock tokens
                 try:
-                    if hasattr(adapter, 'client') and hasattr(adapter.client, 'get_open_orders'):
-                        # Binance
-                        open_orders = adapter.client.get_open_orders(symbol=order.symbol)
-                        for oo in open_orders:
-                            if oo['side'] == 'SELL':  # TP orders are SELL
-                                try:
-                                    adapter.client.cancel_order(symbol=order.symbol, orderId=oo['orderId'])
-                                except:
-                                    pass
-                    elif hasattr(adapter, 'cancel_all_orders'):
-                        # Other exchanges
-                        adapter.cancel_all_orders(order.symbol)
+                    open_orders = adapter.get_open_orders(order.symbol)
+                    for oo in open_orders:
+                        if oo.get('side') == 'SELL' or oo.get('side') == 'Sell':  # TP orders are SELL
+                            try:
+                                adapter.cancel_order(order.symbol, oo.get('orderId'))
+                            except:
+                                pass
                 except:
                     pass
                 

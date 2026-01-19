@@ -646,23 +646,25 @@ async def create_order(
             if qty < min_qty:
                 raise Exception(f"Quantity {qty} below minimum {min_qty}")
             
-            # Check minimum notional
-            current_price = float(adapter.client.get_symbol_ticker(symbol=order_data.symbol)['price'])
+            # Format quantity as string
+            qty_str = ('{:.8f}'.format(qty)).rstrip('0').rstrip('.')
+            
+            # Check minimum notional using adapter method
+            current_price = adapter.get_symbol_price(order_data.symbol)
             notional = qty * current_price
             if notional < min_notional:
                 raise Exception(f"Order value ${notional:.2f} below minimum ${min_notional:.2f}")
             
-            # Format quantity as string
-            qty_str = ('{:.8f}'.format(qty)).rstrip('0').rstrip('.')
-            
-            # Place market buy order
-            market_order = adapter.client.order_market_buy(
+            # Place market buy order using adapter method (works for both Binance and Bybit)
+            market_order = adapter.place_order(
                 symbol=order_data.symbol,
-                quantity=qty_str
+                side='BUY',
+                type_='MARKET',
+                quantity=qty
             )
             
-            # Get executed price
-            executed_price = float(market_order.get('fills', [{}])[0].get('price', order_data.entry_price))
+            # Get executed price from response
+            executed_price = float(market_order.get('avgPrice') or market_order.get('price') or order_data.entry_price)
             
             # Update order status
             order.status = "EXECUTED"
