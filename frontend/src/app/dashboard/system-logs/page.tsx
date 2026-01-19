@@ -19,9 +19,9 @@ export default function SystemLogsPage() {
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
-                    <h1 className="text-3xl font-bold">Logs</h1>
+                    <h1 className="text-3xl font-bold">Activity Log</h1>
                     <p className="text-muted-foreground mt-1">
-                        View scheduler and trading logs
+                        Your trading activity history
                     </p>
                 </div>
                 <div className="flex items-center gap-3">
@@ -54,9 +54,9 @@ export default function SystemLogsPage() {
             <div className="bg-card rounded-2xl border border-border overflow-hidden">
                 <div className="flex items-center gap-3 px-6 py-4 border-b border-border">
                     <FileText className="w-5 h-5 text-muted-foreground" />
-                    <span className="font-medium">scheduler.log</span>
+                    <span className="font-medium">Activity Log</span>
                     <span className="text-sm text-muted-foreground">
-                        ({logs.length} lines)
+                        ({logs.length} events)
                     </span>
                 </div>
 
@@ -83,9 +83,9 @@ export default function SystemLogsPage() {
                                         className={
                                             line.includes("ERROR") || line.includes("error")
                                                 ? "text-red-500"
-                                                : line.includes("WARNING") || line.includes("warning")
+                                                : line.includes("CLOSED_SL")
                                                     ? "text-amber-500"
-                                                    : line.includes("SUCCESS") || line.includes("success")
+                                                    : line.includes("CLOSED_TP") || line.includes("EXECUTED")
                                                         ? "text-emerald-500"
                                                         : ""
                                         }
