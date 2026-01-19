@@ -108,33 +108,20 @@ class ExchangeService:
         """Ottiene il saldo di un asset"""
         adapter = ExchangeService.get_adapter(user_id, exchange_name, is_testnet)
         
-        if exchange_name.lower() == "binance":
-            balance = adapter.client.get_asset_balance(asset=asset)
-            return {
-                "asset": asset,
-                "free": float(balance['free']),
-                "locked": float(balance['locked']),
-                "total": float(balance['free']) + float(balance['locked'])
-            }
-        else:
-            free = adapter.get_balance(asset)
-            return {
-                "asset": asset,
-                "free": free,
-                "locked": 0,
-                "total": free
-            }
+        # Use adapter method that works for all exchanges
+        balance_info = adapter.get_asset_balance(asset)
+        return {
+            "asset": asset,
+            "free": float(balance_info.get('free', 0)),
+            "locked": float(balance_info.get('locked', 0)),
+            "total": float(balance_info.get('free', 0)) + float(balance_info.get('locked', 0))
+        }
     
     @staticmethod
-    def get_price(symbol: str, exchange_name: str = "binance", is_testnet: bool = False) -> float:
-        """Ottiene il prezzo corrente di un simbolo (usa API pubblica)"""
-        if exchange_name.lower() == "binance":
-            from binance.client import Client
-            client = Client(testnet=is_testnet)
-            ticker = client.get_symbol_ticker(symbol=symbol)
-            return float(ticker['price'])
-        else:
-            raise NotImplementedError(f"get_price not implemented for {exchange_name}")
+    def get_price(user_id: int, symbol: str, exchange_name: str = "binance", is_testnet: bool = False) -> float:
+        """Ottiene il prezzo corrente di un simbolo"""
+        adapter = ExchangeService.get_adapter(user_id, exchange_name, is_testnet)
+        return adapter.get_symbol_price(symbol)
     
     @staticmethod
     def get_symbols(quote_asset: str = "USDC", exchange_name: str = "binance") -> list:

@@ -91,12 +91,9 @@ async def get_portfolio(
     
     # Get USDC balance
     try:
-        usdc_free = adapter.get_balance("USDC")
-        usdc_locked = 0  # Most adapters don't separate locked
-        if hasattr(adapter, 'client'):
-            usdc_balance = adapter.client.get_asset_balance(asset="USDC")
-            usdc_free = float(usdc_balance['free'])
-            usdc_locked = float(usdc_balance['locked'])
+        balance_info = adapter.get_asset_balance("USDC")
+        usdc_free = float(balance_info.get('free', 0))
+        usdc_locked = float(balance_info.get('locked', 0))
         usdc_total = usdc_free + usdc_locked
     except Exception:
         usdc_free = 0
@@ -127,11 +124,7 @@ async def get_portfolio(
     
     for order in executed_orders:
         try:
-            if hasattr(adapter, 'client'):
-                ticker = adapter.client.get_symbol_ticker(symbol=order.symbol)
-                current_price = float(ticker['price'])
-            else:
-                current_price = float(order.executed_price or order.entry_price or 0)
+            current_price = adapter.get_symbol_price(order.symbol)
         except:
             current_price = float(order.executed_price or order.entry_price or 0)
         
@@ -175,35 +168,34 @@ async def get_portfolio(
     stablecoins = ['USDC', 'USDT', 'BUSD', 'DAI', 'TUSD', 'USDP', 'FDUSD']
     
     try:
-        if hasattr(adapter, 'client'):
-            # Get all prices in ONE call (much faster)
-            all_tickers = adapter.client.get_all_tickers()
-            prices = {t['symbol']: float(t['price']) for t in all_tickers}
+        # Get all prices in ONE call (works for both Binance and Bybit)
+        all_tickers = adapter.get_all_tickers()
+        prices = {t['symbol']: float(t['price']) for t in all_tickers}
+        
+        # Get all account balances
+        account_info = adapter.get_account()
+        balances = account_info.get('balances', [])
+        
+        for balance in balances:
+            asset = balance['asset']
+            total_amount = float(balance['free']) + float(balance['locked'])
             
-            # Get all account balances
-            account_info = adapter.client.get_account()
-            balances = account_info.get('balances', [])
+            if total_amount <= 0.0001:  # Skip dust
+                continue
+                
+            # Skip stablecoins (they're counted separately)
+            if asset in stablecoins:
+                continue
             
-            for balance in balances:
-                asset = balance['asset']
-                total_amount = float(balance['free']) + float(balance['locked'])
-                
-                if total_amount <= 0.0001:  # Skip dust
-                    continue
-                    
-                # Skip stablecoins (they're counted separately)
-                if asset in stablecoins:
-                    continue
-                
-                # Get price in USDC or USDT
-                usdc_pair = f"{asset}USDC"
-                usdt_pair = f"{asset}USDT"
-                
-                if usdc_pair in prices:
-                    crypto_total_value += total_amount * prices[usdc_pair]
-                elif usdt_pair in prices:
-                    crypto_total_value += total_amount * prices[usdt_pair]
-                # else: can't price this asset, skip
+            # Get price in USDC or USDT
+            usdc_pair = f"{asset}USDC"
+            usdt_pair = f"{asset}USDT"
+            
+            if usdc_pair in prices:
+                crypto_total_value += total_amount * prices[usdc_pair]
+            elif usdt_pair in prices:
+                crypto_total_value += total_amount * prices[usdt_pair]
+            # else: can't price this asset, skip
     except Exception as e:
         # If we can't get all balances, fall back to positions_value
         crypto_total_value = positions_value
@@ -301,62 +293,62 @@ async def get_holdings(
         tracked_quantities[base_asset] += float(order.quantity) if order.quantity else 0
     
     try:
-        if hasattr(adapter, 'client'):
-            all_tickers = adapter.client.get_all_tickers()
-            prices = {t['symbol']: float(t['price']) for t in all_tickers}
+        # Get all tickers and account info (works for both Binance and Bybit)
+        all_tickers = adapter.get_all_tickers()
+        prices = {t['symbol']: float(t['price']) for t in all_tickers}
+        
+        account_info = adapter.get_account()
+        balances = account_info.get('balances', [])
+        
+        for balance in balances:
+            asset = balance['asset']
+            quantity = float(balance['free']) + float(balance['locked'])
             
-            account_info = adapter.client.get_account()
-            balances = account_info.get('balances', [])
+            if quantity <= 0.0001 or asset in stablecoins:
+                continue
             
-            for balance in balances:
-                asset = balance['asset']
-                quantity = float(balance['free']) + float(balance['locked'])
-                
-                if quantity <= 0.0001 or asset in stablecoins:
-                    continue
-                
-                # Subtract quantity already tracked by app orders
-                tracked_qty = tracked_quantities.get(asset, 0)
-                external_qty = quantity - tracked_qty
-                
-                # Skip if no external quantity remains
-                if external_qty <= 0.0001:
-                    continue
-                
-                # Find price
-                usdc_pair = f"{asset}USDC"
-                usdt_pair = f"{asset}USDT"
-                
-                current_price = 0
+            # Subtract quantity already tracked by app orders
+            tracked_qty = tracked_quantities.get(asset, 0)
+            external_qty = quantity - tracked_qty
+            
+            # Skip if no external quantity remains
+            if external_qty <= 0.0001:
+                continue
+            
+            # Find price
+            usdc_pair = f"{asset}USDC"
+            usdt_pair = f"{asset}USDT"
+            
+            current_price = 0
+            symbol = usdc_pair
+            
+            if usdc_pair in prices:
+                current_price = prices[usdc_pair]
                 symbol = usdc_pair
-                
-                if usdc_pair in prices:
-                    current_price = prices[usdc_pair]
-                    symbol = usdc_pair
-                elif usdt_pair in prices:
-                    current_price = prices[usdt_pair]
-                    symbol = usdt_pair
-                else:
-                    continue
-                
-                current_value = external_qty * current_price
-                total_value += current_value
-                
-                # Estimate avg price (we don't know actual entry, use current as placeholder)
-                avg_price = current_price
-                pnl = 0
-                pnl_percent = 0
-                
-                holdings.append(HoldingInfo(
-                    asset=asset,
-                    symbol=symbol,
-                    quantity=external_qty,
-                    avg_price=avg_price,
-                    current_price=current_price,
-                    current_value=current_value,
-                    pnl=pnl,
-                    pnl_percent=pnl_percent
-                ))
+            elif usdt_pair in prices:
+                current_price = prices[usdt_pair]
+                symbol = usdt_pair
+            else:
+                continue
+            
+            current_value = external_qty * current_price
+            total_value += current_value
+            
+            # Estimate avg price (we don't know actual entry, use current as placeholder)
+            avg_price = current_price
+            pnl = 0
+            pnl_percent = 0
+            
+            holdings.append(HoldingInfo(
+                asset=asset,
+                symbol=symbol,
+                quantity=external_qty,
+                avg_price=avg_price,
+                current_price=current_price,
+                current_value=current_value,
+                pnl=pnl,
+                pnl_percent=pnl_percent
+            ))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching holdings: {str(e)}")
     
@@ -1114,10 +1106,7 @@ async def split_order(
                 db.commit()
                 
                 try:
-                    adapter.client.cancel_order(
-                        symbol=order.symbol,
-                        orderId=int(old_tp_order_id)
-                    )
+                    adapter.cancel_order(order.symbol, old_tp_order_id)
                     logger.info(f"[SPLIT] Cancelled old TP order {old_tp_order_id}")
                 except Exception as e:
                     logger.warning(f"[SPLIT] Could not cancel old TP order {old_tp_order_id}: {e}")
@@ -1126,13 +1115,12 @@ async def split_order(
             def recreate_old_tp():
                 if old_tp_price and old_qty:
                     try:
-                        resp = adapter.client.create_order(
+                        resp = adapter.place_order(
                             symbol=order.symbol,
                             side='SELL',
-                            type='LIMIT',
-                            timeInForce='GTC',
-                            quantity=old_qty,
-                            price=old_tp_price
+                            type_='LIMIT',
+                            quantity=float(old_qty),
+                            price=float(old_tp_price)
                         )
                         order.tp_order_id = str(resp.get('orderId'))
                         db.commit()
@@ -1146,13 +1134,12 @@ async def split_order(
             logger.info(f"[SPLIT] Creating TP1: {qty1_str} @ {price1_str}")
             
             try:
-                resp1 = adapter.client.create_order(
+                resp1 = adapter.place_order(
                     symbol=order.symbol,
                     side='SELL',
-                    type='LIMIT',
-                    timeInForce='GTC',
-                    quantity=qty1_str,
-                    price=price1_str
+                    type_='LIMIT',
+                    quantity=float(qty1_str),
+                    price=float(price1_str)
                 )
                 logger.info(f"[SPLIT] TP1 created: orderId={resp1.get('orderId')}")
             except Exception as e1:
@@ -1167,20 +1154,19 @@ async def split_order(
             logger.info(f"[SPLIT] Creating TP2: {qty2_str} @ {price2_str}")
             
             try:
-                resp2 = adapter.client.create_order(
+                resp2 = adapter.place_order(
                     symbol=order.symbol,
                     side='SELL',
-                    type='LIMIT',
-                    timeInForce='GTC',
-                    quantity=qty2_str,
-                    price=price2_str
+                    type_='LIMIT',
+                    quantity=float(qty2_str),
+                    price=float(price2_str)
                 )
                 logger.info(f"[SPLIT] TP2 created: orderId={resp2.get('orderId')}")
             except Exception as e2:
                 logger.error(f"[SPLIT] Failed to create TP2: {e2}")
                 # Cancel TP1 and recreate old TP
                 try:
-                    adapter.client.cancel_order(symbol=order.symbol, orderId=resp1.get('orderId'))
+                    adapter.cancel_order(order.symbol, resp1.get('orderId'))
                     logger.info(f"[SPLIT] Cancelled TP1 due to TP2 failure")
                 except:
                     pass
