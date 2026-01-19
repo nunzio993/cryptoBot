@@ -715,8 +715,10 @@ async def update_order(
         order.take_profit = Decimal(str(order_data.take_profit))
     if order_data.stop_loss is not None:
         order.stop_loss = Decimal(str(order_data.stop_loss))
+        order.sl_updated_at = datetime.now(timezone.utc)  # Reset SL timing
     if order_data.stop_interval is not None:
         order.stop_interval = order_data.stop_interval
+        order.sl_updated_at = datetime.now(timezone.utc)  # Reset SL timing
     if order_data.entry_interval is not None:
         order.entry_interval = order_data.entry_interval
     

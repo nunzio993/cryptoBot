@@ -86,6 +86,7 @@ class Order(Base):
     executed_price = Column(Numeric, nullable=True)
     executed_at    = Column(DateTime(timezone=True), nullable=True)
     closed_at      = Column(DateTime(timezone=True), nullable=True)
+    sl_updated_at  = Column(DateTime(timezone=True), nullable=True)  # When SL/stop_interval was last modified
     created_at     = Column(DateTime(timezone=True), server_default=func.now())
     is_testnet     = Column(Boolean, default=False, nullable=False)
     tp_order_id    = Column(String, nullable=True)  # Binance TP order ID for accurate cancellation

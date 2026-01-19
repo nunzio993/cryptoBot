@@ -267,11 +267,13 @@ def check_and_execute_stop_loss():
             ts_candle = datetime.fromtimestamp(candle[0] / 1000, tz=timezone.utc)
             candle_close_time = get_candle_close_time(ts_candle, interval)
 
-            # Check: chiusura candela <= stop_loss e candela che CHIUDE dopo l'esecuzione
+            # Check: chiusura candela <= stop_loss e candela che CHIUDE dopo esecuzione/modifica
+            # Use sl_updated_at if SL was modified, otherwise use executed_at
+            reference_time = order.sl_updated_at if order.sl_updated_at else order.executed_at
             if (
                 order.stop_loss is not None and
                 last_close <= float(order.stop_loss) and
-                candle_close_time >= order.executed_at
+                candle_close_time >= reference_time
             ):
                 # NOTE: We reuse the 'adapter' created above (line 261) which already has
                 # decrypted API keys and correct testnet setting from get_exchange_adapter()
