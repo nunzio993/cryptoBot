@@ -219,6 +219,7 @@ def auto_execute_pending():
                     order.executed_price = exec_price
                     order.quantity = executed_qty  # Update with actual executed quantity
                     order.tp_order_id = str(tp_response.get('orderId'))  # Save Binance TP order ID
+                    order.sl_updated_at = exec_time  # Set for WebSocket handler grace period
                     session.commit()
 
                     tlogger.info(f"[{'PARTIAL_FILLED' if is_partial else 'EXECUTED'}] order {order.id} @ {exec_price}, qty={executed_qty}/{original_qty}, TP placed")
