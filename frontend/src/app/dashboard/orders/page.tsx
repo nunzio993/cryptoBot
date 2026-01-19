@@ -12,11 +12,12 @@ import { cn } from "@/lib/utils";
 type Tab = "pending" | "executed" | "closed";
 
 export default function OrdersPage() {
-    // Load saved API key ID from localStorage
+    // Load saved API key ID from localStorage (null = All Exchanges)
     const [selectedKeyId, setSelectedKeyId] = useState<number | null>(() => {
         if (typeof window !== "undefined") {
             const saved = localStorage.getItem("cryptobot_api_key_id");
-            return saved ? parseInt(saved, 10) : null;
+            if (saved === "all" || saved === null) return null;
+            return parseInt(saved, 10);
         }
         return null;
     });
@@ -30,20 +31,21 @@ export default function OrdersPage() {
         queryFn: () => apiKeysApi.list().then((res) => res.data),
     });
 
-    // Auto-select first API key if none selected
+    // Sync selectedKey with selectedKeyId
     useEffect(() => {
-        if (!selectedKeyId && apiKeys.length > 0) {
-            setSelectedKeyId(apiKeys[0].id);
-            setSelectedKey(apiKeys[0]);
-        } else if (selectedKeyId && apiKeys.length > 0) {
+        if (selectedKeyId && apiKeys.length > 0) {
             const key = apiKeys.find(k => k.id === selectedKeyId);
             if (key) setSelectedKey(key);
+        } else {
+            setSelectedKey(null);
         }
     }, [apiKeys, selectedKeyId]);
 
     // Save selected key to localStorage
     useEffect(() => {
-        if (selectedKeyId) {
+        if (selectedKeyId === null) {
+            localStorage.setItem("cryptobot_api_key_id", "all");
+        } else {
             localStorage.setItem("cryptobot_api_key_id", selectedKeyId.toString());
         }
     }, [selectedKeyId]);
