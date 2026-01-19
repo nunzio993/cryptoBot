@@ -44,174 +44,165 @@ class PortfolioResponse(BaseModel):
 
 @router.get("/portfolio", response_model=PortfolioResponse)
 async def get_portfolio(
-    api_key_id: Optional[int] = Query(None, description="Specific API key ID to use"),
+    api_key_id: Optional[int] = Query(None, description="Specific API key ID to use (None = aggregate all)"),
     network_mode: str = Query("Mainnet", description="Fallback if api_key_id not provided"),
     current_user: User = Depends(get_current_user),
     db=Depends(get_db)
 ):
-    """Calcola il portfolio completo con P&L delle posizioni per una specifica API key"""
+    """Calcola il portfolio completo. Se api_key_id è None, aggrega tutti gli exchange dell'utente."""
     
-    # Get API key - either by ID or by network_mode fallback
-    if api_key_id:
-        key = db.query(APIKey).filter(
-            APIKey.id == api_key_id,
-            APIKey.user_id == current_user.id
-        ).first()
-        if not key:
-            raise HTTPException(status_code=400, detail="API key not found")
-    else:
-        # Fallback to network_mode for backward compatibility
-        exchange = db.query(Exchange).filter_by(name="binance").first()
-        if not exchange:
-            raise HTTPException(status_code=400, detail="Exchange not found")
-        key = db.query(APIKey).filter_by(
-            user_id=current_user.id,
-            exchange_id=exchange.id,
-            is_testnet=(network_mode == "Testnet")
-        ).first()
-        if not key:
-            raise HTTPException(status_code=400, detail=f"No API key for {network_mode}")
-    
-    # Get exchange info
-    exchange = db.query(Exchange).filter_by(id=key.exchange_id).first()
-    
-    # Create adapter using ExchangeFactory with decrypted keys
     from src.exchange_factory import ExchangeFactory
     from src.crypto_utils import decrypt_api_key
     
-    decrypted_key = decrypt_api_key(key.api_key, current_user.id)
-    decrypted_secret = decrypt_api_key(key.secret_key, current_user.id)
+    # Get API keys to process
+    if api_key_id:
+        # Single API key mode
+        keys = [db.query(APIKey).filter(
+            APIKey.id == api_key_id,
+            APIKey.user_id == current_user.id
+        ).first()]
+        if not keys[0]:
+            raise HTTPException(status_code=400, detail="API key not found")
+    else:
+        # Aggregate all API keys
+        keys = db.query(APIKey).filter(APIKey.user_id == current_user.id).all()
+        if not keys:
+            return PortfolioResponse(
+                usdc_total=0, usdc_free=0, usdc_locked=0, usdc_blocked=0,
+                usdc_available=0, positions_value=0, portfolio_total=0, positions=[]
+            )
     
-    adapter = ExchangeFactory.create(
-        exchange.name, 
-        decrypted_key, 
-        decrypted_secret, 
-        testnet=key.is_testnet
-    )
+    # Aggregate values from all keys
+    total_usdc_free = 0
+    total_usdc_locked = 0
+    total_usdc_blocked = 0
+    total_crypto_value = 0
+    all_positions = []
     
-    # Get USDC balance
-    try:
-        balance_info = adapter.get_asset_balance("USDC")
-        usdc_free = float(balance_info.get('free', 0))
-        usdc_locked = float(balance_info.get('locked', 0))
-        usdc_total = usdc_free + usdc_locked
-    except Exception:
-        usdc_free = 0
-        usdc_locked = 0
-        usdc_total = 0
-    
-    # Get pending orders for THIS API key (same exchange_id and is_testnet)
-    pending_orders = db.query(Order).filter(
-        Order.user_id == current_user.id,
-        Order.status == "PENDING",
-        Order.exchange_id == key.exchange_id,
-        Order.is_testnet == key.is_testnet
-    ).all()
-    
-    usdc_blocked = sum(float(o.quantity or 0) * float(o.max_entry or 0) for o in pending_orders)
-    usdc_available = max(0, usdc_free - usdc_blocked)
-    
-    # Get executed orders for THIS API key (include PARTIAL_FILLED)
-    executed_orders = db.query(Order).filter(
-        Order.user_id == current_user.id,
-        Order.status.in_(["EXECUTED", "PARTIAL_FILLED"]),
-        Order.exchange_id == key.exchange_id,
-        Order.is_testnet == key.is_testnet
-    ).all()
-    
-    positions = []
-    positions_value = 0
-    
-    for order in executed_orders:
+    for key in keys:
         try:
-            current_price = adapter.get_symbol_price(order.symbol)
-        except:
-            current_price = float(order.executed_price or order.entry_price or 0)
-        
-        entry_price = float(order.executed_price or order.entry_price or 0)
-        quantity = float(order.quantity or 0)
-        
-        # Check if quantity is below minimum sellable (skip dust positions)
-        try:
-            if hasattr(adapter, 'client'):
-                symbol_info = adapter.get_symbol_info(order.symbol)
-                if symbol_info:
-                    filters = {f['filterType']: f for f in symbol_info['filters']}
-                    min_qty = float(filters.get('LOT_SIZE', {}).get('minQty', 0))
-                    if quantity < min_qty:
-                        # Position too small to sell, skip it
-                        continue
-        except:
-            pass  # If we can't check, show it anyway
-        
-        current_value = quantity * current_price
-        pnl = current_value - (quantity * entry_price)
-        pnl_percent = ((current_price - entry_price) / entry_price * 100) if entry_price > 0 else 0
-        
-        positions_value += current_value
-        
-        positions.append(PositionInfo(
-            order_id=order.id,
-            symbol=order.symbol,
-            quantity=quantity,
-            entry_price=entry_price,
-            current_price=current_price,
-            current_value=current_value,
-            pnl=pnl,
-            pnl_percent=pnl_percent,
-            take_profit=float(order.take_profit) if order.take_profit else None,
-            stop_loss=float(order.stop_loss) if order.stop_loss else None,
-        ))
-    
-    # Get ALL crypto balances from exchange (not just tracked positions)
-    crypto_total_value = 0
-    stablecoins = ['USDC', 'USDT', 'BUSD', 'DAI', 'TUSD', 'USDP', 'FDUSD']
-    
-    try:
-        # Get all prices in ONE call (works for both Binance and Bybit)
-        all_tickers = adapter.get_all_tickers()
-        prices = {t['symbol']: float(t['price']) for t in all_tickers}
-        
-        # Get all account balances
-        account_info = adapter.get_account()
-        balances = account_info.get('balances', [])
-        
-        for balance in balances:
-            asset = balance['asset']
-            total_amount = float(balance['free']) + float(balance['locked'])
+            exchange = db.query(Exchange).filter_by(id=key.exchange_id).first()
             
-            if total_amount <= 0.0001:  # Skip dust
-                continue
+            decrypted_key = decrypt_api_key(key.api_key, current_user.id)
+            decrypted_secret = decrypt_api_key(key.secret_key, current_user.id)
+            
+            adapter = ExchangeFactory.create(
+                exchange.name, 
+                decrypted_key, 
+                decrypted_secret, 
+                testnet=key.is_testnet
+            )
+            
+            # Get USDC balance
+            try:
+                balance_info = adapter.get_asset_balance("USDC")
+                usdc_free = float(balance_info.get('free', 0))
+                usdc_locked = float(balance_info.get('locked', 0))
+                total_usdc_free += usdc_free
+                total_usdc_locked += usdc_locked
+            except Exception:
+                pass
+            
+            # Get pending orders for this key
+            pending_orders = db.query(Order).filter(
+                Order.user_id == current_user.id,
+                Order.status == "PENDING",
+                Order.exchange_id == key.exchange_id,
+                Order.is_testnet == key.is_testnet
+            ).all()
+            
+            usdc_blocked = sum(float(o.quantity or 0) * float(o.max_entry or 0) for o in pending_orders)
+            total_usdc_blocked += usdc_blocked
+            
+            # Get executed orders for this key
+            executed_orders = db.query(Order).filter(
+                Order.user_id == current_user.id,
+                Order.status.in_(["EXECUTED", "PARTIAL_FILLED"]),
+                Order.exchange_id == key.exchange_id,
+                Order.is_testnet == key.is_testnet
+            ).all()
+            
+            for order in executed_orders:
+                try:
+                    current_price = adapter.get_symbol_price(order.symbol)
+                except:
+                    current_price = float(order.executed_price or order.entry_price or 0)
                 
-            # Skip stablecoins (they're counted separately)
-            if asset in stablecoins:
-                continue
+                entry_price = float(order.executed_price or order.entry_price or 0)
+                quantity = float(order.quantity or 0)
+                
+                # Skip dust positions
+                try:
+                    if hasattr(adapter, 'client'):
+                        symbol_info = adapter.get_symbol_info(order.symbol)
+                        if symbol_info:
+                            filters = {f['filterType']: f for f in symbol_info['filters']}
+                            min_qty = float(filters.get('LOT_SIZE', {}).get('minQty', 0))
+                            if quantity < min_qty:
+                                continue
+                except:
+                    pass
+                
+                current_value = quantity * current_price
+                pnl = current_value - (quantity * entry_price)
+                pnl_percent = ((current_price - entry_price) / entry_price * 100) if entry_price > 0 else 0
+                
+                all_positions.append(PositionInfo(
+                    order_id=order.id,
+                    symbol=order.symbol,
+                    quantity=quantity,
+                    entry_price=entry_price,
+                    current_price=current_price,
+                    current_value=current_value,
+                    pnl=pnl,
+                    pnl_percent=pnl_percent,
+                    take_profit=float(order.take_profit) if order.take_profit else None,
+                    stop_loss=float(order.stop_loss) if order.stop_loss else None,
+                ))
             
-            # Get price in USDC or USDT
-            usdc_pair = f"{asset}USDC"
-            usdt_pair = f"{asset}USDT"
-            
-            if usdc_pair in prices:
-                crypto_total_value += total_amount * prices[usdc_pair]
-            elif usdt_pair in prices:
-                crypto_total_value += total_amount * prices[usdt_pair]
-            # else: can't price this asset, skip
-    except Exception as e:
-        # If we can't get all balances, fall back to positions_value
-        crypto_total_value = positions_value
+            # Get ALL crypto balances from this exchange
+            stablecoins = ['USDC', 'USDT', 'BUSD', 'DAI', 'TUSD', 'USDP', 'FDUSD']
+            try:
+                all_tickers = adapter.get_all_tickers()
+                prices = {t['symbol']: float(t['price']) for t in all_tickers}
+                
+                account_info = adapter.get_account()
+                balances = account_info.get('balances', [])
+                
+                for balance in balances:
+                    asset = balance['asset']
+                    total_amount = float(balance['free']) + float(balance['locked'])
+                    
+                    if total_amount <= 0.0001 or asset in stablecoins:
+                        continue
+                    
+                    usdc_pair = f"{asset}USDC"
+                    usdt_pair = f"{asset}USDT"
+                    
+                    if usdc_pair in prices:
+                        total_crypto_value += total_amount * prices[usdc_pair]
+                    elif usdt_pair in prices:
+                        total_crypto_value += total_amount * prices[usdt_pair]
+            except Exception:
+                pass
+                
+        except Exception as e:
+            # If one exchange fails, continue with others
+            continue
     
-    # Total portfolio = USDC + all crypto value
-    portfolio_total = usdc_total + crypto_total_value
+    usdc_total = total_usdc_free + total_usdc_locked
+    usdc_available = max(0, total_usdc_free - total_usdc_blocked)
+    portfolio_total = usdc_total + total_crypto_value
     
     return PortfolioResponse(
         usdc_total=usdc_total,
-        usdc_free=usdc_free,
-        usdc_locked=usdc_locked,
-        usdc_blocked=usdc_blocked,
+        usdc_free=total_usdc_free,
+        usdc_locked=total_usdc_locked,
+        usdc_blocked=total_usdc_blocked,
         usdc_available=usdc_available,
-        positions_value=crypto_total_value,  # Now includes ALL crypto, not just tracked
+        positions_value=total_crypto_value,
         portfolio_total=portfolio_total,
-        positions=positions
+        positions=all_positions
     )
 
 
