@@ -47,12 +47,52 @@ class ExchangeService:
                     f"No {network} API key found for user {user_id} on {exchange_name}"
                 )
             
+            # IMPORTANT: Decrypt API keys before creating adapter
+            from src.crypto_utils import decrypt_api_key
+            decrypted_key = decrypt_api_key(api_key.api_key, user_id)
+            decrypted_secret = decrypt_api_key(api_key.secret_key, user_id)
+            
             return ExchangeFactory.create(
                 exchange_name=exchange_name,
-                api_key=api_key.api_key,
-                api_secret=api_key.secret_key,
+                api_key=decrypted_key,
+                api_secret=decrypted_secret,
                 testnet=is_testnet
             )
+    
+    @staticmethod
+    def get_adapter_by_key_id(user_id: int, api_key_id: int) -> tuple:
+        """
+        Ottiene adapter e info dalla API key ID.
+        Garantisce che is_testnet venga sempre dalla API key stessa.
+        
+        Returns:
+            tuple: (adapter, exchange_name, is_testnet, exchange_id)
+        """
+        with SessionLocal() as session:
+            api_key = session.query(APIKey).filter(
+                APIKey.id == api_key_id,
+                APIKey.user_id == user_id
+            ).first()
+            
+            if not api_key:
+                raise ValueError(f"API key {api_key_id} not found for user {user_id}")
+            
+            exchange = session.query(Exchange).filter_by(id=api_key.exchange_id).first()
+            if not exchange:
+                raise ValueError(f"Exchange not found for API key {api_key_id}")
+            
+            from src.crypto_utils import decrypt_api_key
+            decrypted_key = decrypt_api_key(api_key.api_key, user_id)
+            decrypted_secret = decrypt_api_key(api_key.secret_key, user_id)
+            
+            adapter = ExchangeFactory.create(
+                exchange_name=exchange.name,
+                api_key=decrypted_key,
+                api_secret=decrypted_secret,
+                testnet=api_key.is_testnet
+            )
+            
+            return adapter, exchange.name, api_key.is_testnet, api_key.exchange_id
     
     @staticmethod
     def get_exchange_id(exchange_name: str = "binance") -> int:

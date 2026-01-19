@@ -67,10 +67,12 @@ def decrypt_api_key(ciphertext: str, user_id: int) -> str:
         decrypted = fernet.decrypt(ciphertext.encode())
         return decrypted.decode('utf-8')
     except Exception as e:
-        # If decryption fails, assume it's already plaintext (migration case)
-        # This allows gradual migration of existing keys
-        print(f"[CRYPTO] Decryption failed, assuming plaintext: {e}")
-        return ciphertext
+        # Don't silently return ciphertext - this would cause auth failures
+        # and make debugging difficult. Fail explicitly instead.
+        raise ValueError(
+            f"Failed to decrypt API key for user {user_id}. "
+            f"Check SECRET_KEY configuration. Error: {e}"
+        )
 
 
 def is_encrypted(value: str) -> bool:
