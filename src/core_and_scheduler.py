@@ -505,16 +505,27 @@ def check_cancelled_tp_orders():
     The user can then manually recreate the TP or close the position.
     """
     with SessionLocal() as session:
-        # Grace period: don't check orders created in the last 15 seconds
-        # This prevents race conditions where scheduler runs before API commit completes
-        grace_period = datetime.now(timezone.utc) - timedelta(seconds=15)
+        # Grace period: don't check orders created or updated in the last 30 seconds
+        # This prevents race conditions where scheduler runs during API TP/SL update
+        grace_period = datetime.now(timezone.utc) - timedelta(seconds=30)
         
-        # Get executed orders that have a tp_order_id and were created more than 60 seconds ago
+        # Get executed orders that have a tp_order_id
         orders_with_tp = session.query(Order).filter(
             Order.status.in_(['EXECUTED', 'PARTIAL_FILLED']),
             Order.tp_order_id != None,
             Order.created_at < grace_period
         ).all()
+        
+        # Filter out orders that were recently updated (sl_updated_at within grace period)
+        filtered_orders = []
+        for order in orders_with_tp:
+            sl_updated = getattr(order, 'sl_updated_at', None)
+            if sl_updated and sl_updated > grace_period:
+                tlogger.info(f"[TP_CHECK] Order {order.id}: Skipping (recently updated)")
+                continue
+            filtered_orders.append(order)
+        
+        orders_with_tp = filtered_orders
         
         # Group orders by user, exchange, and symbol to minimize API calls
         # IMPORTANT: Must include exchange_id to avoid using wrong adapter

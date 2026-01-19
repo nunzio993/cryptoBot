@@ -728,6 +728,7 @@ async def update_order(
         order.max_entry = Decimal(str(order_data.max_entry))
     if order_data.take_profit is not None:
         order.take_profit = Decimal(str(order_data.take_profit))
+        order.sl_updated_at = datetime.now(timezone.utc)  # Reset timing for TP_CHECK grace period
     if order_data.stop_loss is not None:
         order.stop_loss = Decimal(str(order_data.stop_loss))
         order.sl_updated_at = datetime.now(timezone.utc)  # Reset SL timing
