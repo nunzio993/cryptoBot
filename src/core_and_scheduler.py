@@ -275,10 +275,20 @@ def check_and_execute_stop_loss():
             ):
                 # NOTE: We reuse the 'adapter' created above (line 261) which already has
                 # decrypted API keys and correct testnet setting from get_exchange_adapter()
+                
+                # Skip SL check if order already has an active TP - the position is managed
+                if order.tp_order_id:
+                    tlogger.debug(f"[SL_CHECK] Order {order.id} has active TP {order.tp_order_id}, skipping SL check")
+                    continue
+                
                 try:
                     base_asset = order.symbol.replace("USDC", "").replace("USDT", "")
                     balance_info = adapter.get_asset_balance(base_asset)
-                    balance = float(balance_info.get('free', balance_info.get('walletBalance', 0)))
+                    # Use TOTAL balance (free + locked), not just free
+                    # BNB might be locked in pending TP orders
+                    free_bal = float(balance_info.get('free', 0))
+                    locked_bal = float(balance_info.get('locked', 0))
+                    balance = free_bal + locked_bal
                     symbol_info = adapter.client.get_symbol_info(order.symbol)
                     filters = {f['filterType']: f for f in symbol_info['filters']}
                     step_size = float(filters['LOT_SIZE']['stepSize'])
@@ -370,12 +380,23 @@ def sync_orders():
             
             try:
                 adapter = get_exchange_adapter(order.user_id, exchange_name, is_testnet)
+                
+                # Skip sync for orders with active TP - they're being managed
+                if order.tp_order_id:
+                    tlogger.debug(f"[SYNC] Order {order.id} has active TP, skipping sync check")
+                    continue
+                
                 base_asset = order.symbol.replace("USDC", "").replace("USDT", "")
-                balance = adapter.get_balance(base_asset)
+                
+                # Get TOTAL balance (free + locked) - for Bybit, assets might be locked in TP orders
+                balance_info = adapter.get_asset_balance(base_asset)
+                free_bal = float(balance_info.get('free', 0))
+                locked_bal = float(balance_info.get('locked', 0))
+                balance = free_bal + locked_bal
                 order_qty = float(order.quantity) if order.quantity else 0
                 
                 network_name = "Testnet" if is_testnet else "Mainnet"
-                tlogger.info(f"[SYNC DEBUG] order {order.id} | {exchange_name} {network_name} | asset={base_asset} | balance={balance} | order_qty={order_qty}")
+                tlogger.info(f"[SYNC DEBUG] order {order.id} | {exchange_name} {network_name} | asset={base_asset} | balance={balance} (free={free_bal}, locked={locked_bal}) | order_qty={order_qty}")
                 
                 # Get minimum quantity for the symbol
                 min_qty = 0.0
