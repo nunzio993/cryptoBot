@@ -276,11 +276,6 @@ def check_and_execute_stop_loss():
                 # NOTE: We reuse the 'adapter' created above (line 261) which already has
                 # decrypted API keys and correct testnet setting from get_exchange_adapter()
                 
-                # Skip SL check if order already has an active TP - the position is managed
-                if order.tp_order_id:
-                    tlogger.debug(f"[SL_CHECK] Order {order.id} has active TP {order.tp_order_id}, skipping SL check")
-                    continue
-                
                 try:
                     base_asset = order.symbol.replace("USDC", "").replace("USDT", "")
                     balance_info = adapter.get_asset_balance(base_asset)
@@ -304,6 +299,16 @@ def check_and_execute_stop_loss():
 
                     original_qty = float(order.quantity)
                     qty_to_close = min(original_qty, balance)
+                    
+                    # Cancel TP order first if it exists (BNB is locked in TP)
+                    if order.tp_order_id:
+                        try:
+                            tlogger.info(f"[SL] Cancelling TP order {order.tp_order_id} before SL execution for order {order.id}")
+                            adapter.cancel_order(order.symbol, order.tp_order_id)
+                            order.tp_order_id = None
+                            session.commit()
+                        except Exception as cancel_err:
+                            tlogger.error(f"[SL] Failed to cancel TP {order.tp_order_id}: {cancel_err}")
                     
                     # Execute SL using the correctly initialized adapter
                     adapter.close_position_market(order.symbol, qty_to_close)
