@@ -44,6 +44,8 @@ export interface Order {
     executed_at: string | null;
     closed_at: string | null;
     created_at: string | null;
+    is_testnet?: boolean;
+    exchange_name?: string;
 }
 
 export interface Balance {
@@ -77,6 +79,7 @@ export interface Position {
     pnl_percent: number;
     take_profit: number | null;
     stop_loss: number | null;
+    exchange_name?: string;
 }
 
 export interface Portfolio {

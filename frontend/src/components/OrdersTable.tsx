@@ -290,7 +290,14 @@ export function OrdersTable({
                             >
                                 <td className="py-3 px-4 text-sm font-mono">#{order.id}</td>
                                 <td className="py-3 px-4">
-                                    <span className="font-medium">{order.symbol}</span>
+                                    <div className="flex items-center gap-2">
+                                        <span className="font-medium">{order.symbol}</span>
+                                        {order.exchange_name && (
+                                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/20 text-primary uppercase">
+                                                {order.exchange_name}
+                                            </span>
+                                        )}
+                                    </div>
                                 </td>
                                 <td className="py-3 px-4 text-right font-mono">
                                     {formatCurrency(order.quantity, 4)}

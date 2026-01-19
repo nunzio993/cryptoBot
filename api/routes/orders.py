@@ -29,6 +29,7 @@ class PositionInfo(BaseModel):
     pnl_percent: float
     take_profit: Optional[float]
     stop_loss: Optional[float]
+    exchange_name: Optional[str] = None  # Exchange name for display
 
 
 class PortfolioResponse(BaseModel):
@@ -158,6 +159,7 @@ async def get_portfolio(
                     pnl_percent=pnl_percent,
                     take_profit=float(order.take_profit) if order.take_profit else None,
                     stop_loss=float(order.stop_loss) if order.stop_loss else None,
+                    exchange_name=exchange.name,
                 ))
             
             # Get ALL crypto balances from this exchange
@@ -453,6 +455,7 @@ class OrderResponse(BaseModel):
     closed_at: Optional[datetime]
     created_at: Optional[datetime]
     is_testnet: Optional[bool]
+    exchange_name: Optional[str] = None  # Exchange name for display
 
     class Config:
         from_attributes = True
@@ -489,7 +492,39 @@ async def list_orders(
         else:
             query = query.filter(Order.status == status)
     
-    return query.order_by(Order.created_at.desc()).all()
+    orders = query.order_by(Order.created_at.desc()).all()
+    
+    # Add exchange_name to each order
+    result = []
+    exchange_cache = {}  # Cache exchange lookups
+    for order in orders:
+        # Get exchange name from cache or DB
+        if order.exchange_id not in exchange_cache:
+            exchange = db.query(Exchange).filter_by(id=order.exchange_id).first()
+            exchange_cache[order.exchange_id] = exchange.name if exchange else "unknown"
+        
+        order_dict = {
+            "id": order.id,
+            "symbol": order.symbol,
+            "side": order.side,
+            "quantity": float(order.quantity) if order.quantity else 0,
+            "status": order.status,
+            "entry_price": float(order.entry_price) if order.entry_price else None,
+            "max_entry": float(order.max_entry) if order.max_entry else None,
+            "take_profit": float(order.take_profit) if order.take_profit else None,
+            "stop_loss": float(order.stop_loss) if order.stop_loss else None,
+            "entry_interval": order.entry_interval,
+            "stop_interval": order.stop_interval,
+            "executed_price": float(order.executed_price) if order.executed_price else None,
+            "executed_at": order.executed_at,
+            "closed_at": order.closed_at,
+            "created_at": order.created_at,
+            "is_testnet": order.is_testnet,
+            "exchange_name": exchange_cache[order.exchange_id],
+        }
+        result.append(OrderResponse(**order_dict))
+    
+    return result
 
 
 @router.post("", response_model=OrderResponse)

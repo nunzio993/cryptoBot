@@ -284,7 +284,14 @@ function PositionCard({ position }: { position: Position }) {
                         )}
                     </div>
                     <div>
-                        <div className="font-semibold">{position.symbol}</div>
+                        <div className="flex items-center gap-2">
+                            <span className="font-semibold">{position.symbol}</span>
+                            {position.exchange_name && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/20 text-primary uppercase">
+                                    {position.exchange_name}
+                                </span>
+                            )}
+                        </div>
                         <div className="text-sm text-muted-foreground">
                             {position.quantity} @ {formatCurrency(position.entry_price)}
                         </div>
