@@ -13,12 +13,14 @@ import {
     Menu,
     X,
     Shield,
+    BarChart3,
 } from "lucide-react";
 import { useState } from "react";
 
 const navigation = [
     { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
     { name: "Orders", href: "/dashboard/orders", icon: TrendingUp },
+    { name: "Statistics", href: "/dashboard/statistics", icon: BarChart3 },
     { name: "API Keys", href: "/dashboard/apikeys", icon: Key },
     { name: "Profile", href: "/dashboard/profile", icon: User },
     { name: "Logs", href: "/dashboard/system-logs", icon: FileText },
