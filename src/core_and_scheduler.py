@@ -129,7 +129,7 @@ def auto_execute_pending():
             if created_dt.tzinfo is None:
                 created_dt = created_dt.replace(tzinfo=timezone.utc)
 
-            candle = fetch_last_closed_candle(order.symbol, order.entry_interval, client)
+            candle = fetch_last_closed_candle(order.symbol, order.entry_interval, adapter.client)
             ts_candle = datetime.fromtimestamp(candle[0] / 1000, tz=timezone.utc)
             candle_close_time = get_candle_close_time(ts_candle, order.entry_interval)
             last_close = float(candle[4])
@@ -167,7 +167,7 @@ def auto_execute_pending():
                 )
 
                 try:
-                    symbol_info = client.get_symbol_info(order.symbol)
+                    symbol_info = adapter.client.get_symbol_info(order.symbol)
                     filters = {f['filterType']: f for f in symbol_info['filters']}
                     step_size = float(filters['LOT_SIZE']['stepSize'])
                     tick_size = float(filters['PRICE_FILTER']['tickSize'])
@@ -277,8 +277,9 @@ def check_and_execute_stop_loss():
                 # decrypted API keys and correct testnet setting from get_exchange_adapter()
                 try:
                     base_asset = order.symbol.replace("USDC", "").replace("USDT", "")
-                    balance = float(client.get_asset_balance(asset=base_asset)['free'])
-                    symbol_info = client.get_symbol_info(order.symbol)
+                    balance_info = adapter.get_asset_balance(base_asset)
+                    balance = float(balance_info.get('free', balance_info.get('walletBalance', 0)))
+                    symbol_info = adapter.client.get_symbol_info(order.symbol)
                     filters = {f['filterType']: f for f in symbol_info['filters']}
                     step_size = float(filters['LOT_SIZE']['stepSize'])
 
@@ -286,7 +287,7 @@ def check_and_execute_stop_loss():
                     if balance < step_size:
                         tlogger.warning(f"[SKIP CLOSE] order {order.id}: saldo {base_asset} troppo basso ({balance})")
                         order.status = 'CLOSED_EXTERNALLY'
-                        order.quantity = 0  # Update quantity to reflect actual state
+                        # Keep original quantity for reference, don't zero it
                         order.closed_at = datetime.now(timezone.utc)
                         session.commit()
                         continue
