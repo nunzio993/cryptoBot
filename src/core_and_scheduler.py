@@ -4,11 +4,11 @@ from binance.client import Client
 from binance.exceptions import BinanceAPIException
 import os
 from src.adapters import BinanceAdapter
+from src.trading_utils import round_to_step, format_quantity, format_price
 
 import logging
 from types import SimpleNamespace
 from datetime import datetime, timezone, timedelta
-import math
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
@@ -91,8 +91,7 @@ def get_order_exchange_name(order, session) -> str:
         return exchange.name if exchange else "binance"
     return "binance"
 
-def round_step_size(value, step_size):
-    return math.floor(value / step_size) * step_size
+
 
 def auto_execute_pending():
     with SessionLocal() as session:
@@ -173,7 +172,7 @@ def auto_execute_pending():
                     tick_size = float(filters['PRICE_FILTER']['tickSize'])
                     min_notional = float(filters['MIN_NOTIONAL']['minNotional']) if 'MIN_NOTIONAL' in filters else 0
 
-                    qty = round_step_size(float(order.quantity), float(step_size))
+                    qty = round_to_step(float(order.quantity), float(step_size))
                     notional = qty * last_close
                     if notional < min_notional:
                         tlogger.error(f"[ERROR] Notional too low for Binance rules on order {order.id}: {notional:.2f}")
@@ -267,13 +266,14 @@ def check_and_execute_stop_loss():
             ts_candle = datetime.fromtimestamp(candle[0] / 1000, tz=timezone.utc)
             candle_close_time = get_candle_close_time(ts_candle, interval)
 
-            # Check: chiusura candela <= stop_loss e candela che CHIUDE dopo esecuzione/modifica
+            # Check: chiusura candela <= stop_loss e candela che INIZIA dopo esecuzione/modifica
             # Use sl_updated_at if SL was modified, otherwise use executed_at
+            # We check candle OPEN time (ts_candle) to ensure we wait for a full candle after modification
             reference_time = order.sl_updated_at if order.sl_updated_at else order.executed_at
             if (
                 order.stop_loss is not None and
                 last_close <= float(order.stop_loss) and
-                candle_close_time >= reference_time
+                ts_candle >= reference_time  # Candle must START after the reference time
             ):
                 # NOTE: We reuse the 'adapter' created above (line 261) which already has
                 # decrypted API keys and correct testnet setting from get_exchange_adapter()
@@ -460,12 +460,12 @@ def sync_orders():
                                 min_qty = float(filters['LOT_SIZE']['minQty'])
                                 
                                 # Format new quantity
-                                formatted_qty = round_step_size(new_qty, step_size)
+                                formatted_qty = round_to_step(new_qty, step_size)
                                 
                                 if formatted_qty >= min_qty:
                                     # Recreate TP order if exists
                                     if order.take_profit and float(order.take_profit) > 0:
-                                        tp_price = round_step_size(float(order.take_profit), tick_size)
+                                        tp_price = round_to_step(float(order.take_profit), tick_size)
                                         try:
                                             adapter.client.create_order(
                                                 symbol=order.symbol,
