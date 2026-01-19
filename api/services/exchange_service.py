@@ -125,7 +125,7 @@ class ExchangeService:
     
     @staticmethod
     def get_symbols(quote_asset: str = "USDC", exchange_name: str = "binance") -> list:
-        """Ottiene la lista dei simboli disponibili"""
+        """Ottiene la lista dei simboli disponibili (public API, no auth needed)"""
         if exchange_name.lower() == "binance":
             from binance.client import Client
             client = Client()
@@ -134,6 +134,16 @@ class ExchangeService:
                 {"symbol": s['symbol']}
                 for s in info['symbols']
                 if s['quoteAsset'] == quote_asset and s['status'] == 'TRADING'
+            ]
+            return sorted(symbols, key=lambda x: x['symbol'])
+        elif exchange_name.lower() == "bybit":
+            from pybit.unified_trading import HTTP
+            client = HTTP()
+            response = client.get_instruments_info(category="spot")
+            symbols = [
+                {"symbol": s['symbol']}
+                for s in response.get('result', {}).get('list', [])
+                if s.get('quoteCoin') == quote_asset and s.get('status') == 'Trading'
             ]
             return sorted(symbols, key=lambda x: x['symbol'])
         else:
