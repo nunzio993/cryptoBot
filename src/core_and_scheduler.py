@@ -270,6 +270,14 @@ def check_and_execute_stop_loss():
             # Use sl_updated_at if SL was modified, otherwise use executed_at
             # Strict > ensures we wait for a candle that CLOSES after modification
             reference_time = order.sl_updated_at if order.sl_updated_at else order.executed_at
+            
+            # Grace period: skip SL check if order was modified in the last 60 seconds
+            # This prevents race condition where scheduler reads before API commits
+            now = datetime.now(timezone.utc)
+            if order.sl_updated_at and (now - order.sl_updated_at).total_seconds() < 60:
+                tlogger.debug(f"[SL_CHECK] Order {order.id} was recently modified, skipping SL check (grace period)")
+                continue
+            
             if (
                 order.stop_loss is not None and
                 last_close <= float(order.stop_loss) and
