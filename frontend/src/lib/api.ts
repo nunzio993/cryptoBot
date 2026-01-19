@@ -255,3 +255,27 @@ export const adminApi = {
     updateUser: (id: number, data: { email?: string }) => api.put<AdminUser>(`/admin/users/${id}`, data),
     deleteUser: (id: number) => api.delete(`/admin/users/${id}`),
 };
+
+// Statistics API
+export interface StatisticsMetrics {
+    current_balance: number;
+    all_time_profit: number;
+    total_trades: number;
+    winning_trades: number;
+    losing_trades: number;
+    win_rate: number;
+}
+
+export interface BalancePoint {
+    date: string;
+    total: number;
+}
+
+export interface StatisticsResponse {
+    metrics: StatisticsMetrics;
+    balance_history: BalancePoint[];
+}
+
+export const statisticsApi = {
+    get: (days: number = 30) => api.get<StatisticsResponse>("/statistics", { params: { days } }),
+};

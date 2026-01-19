@@ -61,6 +61,9 @@ app.include_router(profile.router, prefix="/api/profile", tags=["Profile"])
 app.include_router(logs.router, prefix="/api/logs", tags=["Logs"])
 app.include_router(telegram.router, prefix="/api/telegram", tags=["Telegram"])
 app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
+
+from api.routes import statistics
+app.include_router(statistics.router, prefix="/api/statistics", tags=["Statistics"])
 app.include_router(ws.router, prefix="", tags=["WebSocket"])  # No prefix for WS
 
 

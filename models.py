@@ -2,7 +2,7 @@ import os
 from dotenv import load_dotenv
 from sqlalchemy import (
     create_engine, Column, Integer, String, Text, Numeric,
-    ForeignKey, DateTime, func, Boolean
+    ForeignKey, DateTime, func, Boolean, Date, UniqueConstraint
 )
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 
@@ -137,6 +137,25 @@ class UserSession(Base):
     is_active     = Column(Boolean, default=True)
 
     user = relationship("User")
+
+
+class BalanceHistory(Base):
+    """Tracks daily balance snapshots for statistics and charts"""
+    __tablename__ = "balance_history"
+    __table_args__ = (
+        UniqueConstraint('user_id', 'date', 'exchange_id', 'is_testnet', name='uix_balance_history'),
+        {'extend_existing': True}
+    )
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    date = Column(Date, nullable=False)
+    usdc_balance = Column(Numeric(20, 8), default=0)
+    crypto_value = Column(Numeric(20, 8), default=0)
+    total_balance = Column(Numeric(20, 8), default=0)
+    exchange_id = Column(Integer, ForeignKey("exchanges.id"), nullable=False)
+    is_testnet = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
 # Funzione per inizializzare lo schema

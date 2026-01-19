@@ -588,6 +588,82 @@ def check_cancelled_tp_orders():
                 tlogger.error(f"[TP_CHECK] Error checking TPs for user {user_id}, {symbol}: {e}")
 
 
+def record_daily_balance():
+    """Record daily balance snapshot for each user with active API keys"""
+    from models import BalanceHistory, APIKey, User
+    from datetime import date
+    
+    today = date.today()
+    
+    with SessionLocal() as session:
+        # Get all active API keys
+        api_keys = session.query(APIKey).all()
+        
+        for api_key in api_keys:
+            try:
+                adapter = get_exchange_adapter(api_key.user_id, None, api_key.is_testnet)
+                if not adapter:
+                    continue
+                
+                # Get exchange info
+                exchange = session.query(Exchange).filter_by(id=api_key.exchange_id).first()
+                exchange_name = exchange.name if exchange else "unknown"
+                
+                # Get USDC balance
+                usdc_info = adapter.get_asset_balance("USDC")
+                usdc_balance = float(usdc_info.get('free', 0)) + float(usdc_info.get('locked', 0))
+                
+                # Get crypto value (all non-stablecoin assets)
+                crypto_value = 0.0
+                try:
+                    account_info = adapter.get_account()
+                    balances = account_info.get('balances', [])
+                    all_tickers = adapter.get_all_tickers()
+                    prices = {t['symbol']: float(t['price']) for t in all_tickers}
+                    
+                    stablecoins = {'USDC', 'USDT', 'BUSD', 'DAI', 'TUSD'}
+                    for bal in balances:
+                        asset = bal['asset']
+                        qty = float(bal.get('free', 0)) + float(bal.get('locked', 0))
+                        if qty < 0.0001 or asset in stablecoins:
+                            continue
+                        # Try to get price
+                        price = prices.get(f"{asset}USDC", prices.get(f"{asset}USDT", 0))
+                        crypto_value += qty * price
+                except Exception as e:
+                    tlogger.warning(f"[BALANCE] Error getting crypto value for user {api_key.user_id}: {e}")
+                
+                total_balance = usdc_balance + crypto_value
+                
+                # Upsert balance record
+                existing = session.query(BalanceHistory).filter_by(
+                    user_id=api_key.user_id,
+                    date=today,
+                    exchange_id=api_key.exchange_id,
+                    is_testnet=api_key.is_testnet
+                ).first()
+                
+                if existing:
+                    existing.usdc_balance = usdc_balance
+                    existing.crypto_value = crypto_value
+                    existing.total_balance = total_balance
+                else:
+                    session.add(BalanceHistory(
+                        user_id=api_key.user_id,
+                        date=today,
+                        usdc_balance=usdc_balance,
+                        crypto_value=crypto_value,
+                        total_balance=total_balance,
+                        exchange_id=api_key.exchange_id,
+                        is_testnet=api_key.is_testnet
+                    ))
+                
+                session.commit()
+                tlogger.info(f"[BALANCE] Recorded for user {api_key.user_id}: ${total_balance:.2f}")
+                
+            except Exception as e:
+                tlogger.error(f"[BALANCE] Error recording balance for user {api_key.user_id}: {e}")
+
 def main():
     """Main scheduler loop"""
     from apscheduler.schedulers.blocking import BlockingScheduler
@@ -631,6 +707,9 @@ def main():
     
     # Check for externally cancelled TP orders every 60 seconds (fallback for WebSocket)
     scheduler.add_job(check_cancelled_tp_orders, 'interval', seconds=60, id='check_tp_cancelled')
+    
+    # Record daily balance at midnight UTC
+    scheduler.add_job(record_daily_balance, 'cron', hour=0, minute=0, id='record_balance')
     
     tlogger.info("Scheduler jobs registered:")
     tlogger.info("  - auto_execute_pending: every 1 min")
