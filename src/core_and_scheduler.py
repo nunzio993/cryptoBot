@@ -275,7 +275,7 @@ def check_and_execute_stop_loss():
             # This prevents race condition where scheduler reads before API commits
             now = datetime.now(timezone.utc)
             if order.sl_updated_at and (now - order.sl_updated_at).total_seconds() < 60:
-                tlogger.debug(f"[SL_CHECK] Order {order.id} was recently modified, skipping SL check (grace period)")
+                tlogger.info(f"[SL_GRACE] Order {order.id} modified {(now - order.sl_updated_at).total_seconds():.1f}s ago, skipping (60s grace period)")
                 continue
             
             if (
