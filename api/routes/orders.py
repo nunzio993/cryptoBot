@@ -403,135 +403,42 @@ async def create_order_from_holding(
 ):
     """Create an EXECUTED order from an external holding (crypto bought outside the app)"""
     
-    # Get API key
-    key = db.query(APIKey).filter(
-        APIKey.id == order_data.api_key_id,
-        APIKey.user_id == current_user.id
-    ).first()
+    from api.services.order_service import OrderService
     
-    if not key:
-        raise HTTPException(status_code=400, detail="API key not found")
-    
-    exchange = db.query(Exchange).filter_by(id=key.exchange_id).first()
-    
-    # Create adapter to place TP on exchange
-    from src.exchange_factory import ExchangeFactory
-    from src.crypto_utils import decrypt_api_key
-    
-    decrypted_key = decrypt_api_key(key.api_key, current_user.id)
-    decrypted_secret = decrypt_api_key(key.secret_key, current_user.id)
-    
-    adapter = ExchangeFactory.create(
-        exchange.name, decrypted_key, decrypted_secret, testnet=key.is_testnet
-    )
-    
-    # Get symbol info for quantity formatting
-    symbol_info = adapter.client.get_symbol_info(order_data.symbol)
-    filters = {f['filterType']: f for f in symbol_info['filters']}
-    step_size = float(filters['LOT_SIZE']['stepSize'])
-    tick_size = float(filters['PRICE_FILTER']['tickSize'])
-    min_qty = float(filters['LOT_SIZE']['minQty'])
-    
-    # Check actual balance available - extract base asset correctly
-    asset_name = order_data.symbol
-    for quote in ['USDC', 'USDT']:
-        if asset_name.endswith(quote):
-            asset_name = asset_name[:-len(quote)]
-            break
-    balance_info = adapter.get_balance(asset_name)
-    free_balance = float(balance_info) if balance_info else 0
-    
-    if free_balance < min_qty:
-        raise HTTPException(
-            status_code=400, 
-            detail=f"Insufficient {asset_name} balance. You have {free_balance:.8f} but need at least {min_qty}"
+    try:
+        order = OrderService.create_from_holding(
+            user_id=current_user.id,
+            api_key_id=order_data.api_key_id,
+            symbol=order_data.symbol,
+            quantity=order_data.quantity,
+            entry_price=order_data.entry_price,
+            take_profit=order_data.take_profit,
+            stop_loss=order_data.stop_loss,
+            stop_interval=order_data.stop_interval,
+            db_session=db
         )
-    
-    # Format quantity
-    from decimal import Decimal, ROUND_DOWN
-    
-    # Use the smaller of requested quantity or available balance
-    qty_to_use = min(order_data.quantity, free_balance)
-    qty = Decimal(str(qty_to_use)).quantize(Decimal(str(step_size)), rounding=ROUND_DOWN)
-    
-    if float(qty) < min_qty:
-        raise HTTPException(
-            status_code=400, 
-            detail=f"Quantity {qty} is below minimum {min_qty}"
-        )
-    
-    # Place TP LIMIT order on exchange only if take_profit is provided
-    tp_order_id = None
-    tp_price_value = None
-    if order_data.take_profit:
-        tp_price = Decimal(str(order_data.take_profit)).quantize(Decimal(str(tick_size)), rounding=ROUND_DOWN)
-        tp_price_value = float(tp_price)
         
-        # Check minimum order value (notional)
-        min_notional = float(filters.get('NOTIONAL', {}).get('minNotional', '5'))
-        order_value = float(qty) * float(tp_price)
-        if order_value < min_notional:
-            raise HTTPException(
-                status_code=400, 
-                detail=f"Order value (${order_value:.2f}) is below minimum (${min_notional}). Increase quantity or TP price."
-            )
-        
-        try:
-            tp_response = adapter.client.create_order(
-                symbol=order_data.symbol,
-                side='SELL',
-                type='LIMIT',
-                timeInForce='GTC',
-                quantity=str(qty),
-                price=str(tp_price)
-            )
-            tp_order_id = str(tp_response.get('orderId'))
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Failed to place TP order on exchange: {str(e)}")
-    
-    # Create order in EXECUTED state (we already own the crypto)
-    order = Order(
-        user_id=current_user.id,
-        symbol=order_data.symbol,
-        side='BUY',  # External holdings are assumed to be BUY positions
-        quantity=float(qty),
-        entry_price=order_data.entry_price,
-        max_entry=order_data.entry_price,
-        take_profit=tp_price_value,
-        stop_loss=order_data.stop_loss,
-        entry_interval="1m",
-        stop_interval=order_data.stop_interval,
-        status="EXECUTED",
-        is_testnet=key.is_testnet,
-        exchange_id=key.exchange_id,
-        executed_price=order_data.entry_price,
-        executed_at=datetime.now(timezone.utc),
-        tp_order_id=tp_order_id
-    )
-    
-    db.add(order)
-    db.commit()
-    db.refresh(order)
-    
-    return {
-        "id": order.id,
-        "symbol": order.symbol,
-        "side": order.side,
-        "quantity": float(order.quantity),
-        "status": order.status,
-        "entry_price": float(order.entry_price) if order.entry_price else None,
-        "max_entry": float(order.max_entry) if order.max_entry else None,
-        "take_profit": float(order.take_profit) if order.take_profit else None,
-        "stop_loss": float(order.stop_loss) if order.stop_loss else None,
-        "entry_interval": order.entry_interval,
-        "stop_interval": order.stop_interval,
-        "executed_price": float(order.executed_price) if order.executed_price else None,
-        "executed_at": order.executed_at.isoformat() if order.executed_at else None,
-        "closed_at": None,
-        "created_at": order.created_at.isoformat() if order.created_at else None,
-        "is_testnet": order.is_testnet,
-        "message": "TP order placed on exchange" if tp_order_id else "Order created without TP (add TP later)"
-    }
+        return {
+            "id": order.id,
+            "symbol": order.symbol,
+            "side": order.side,
+            "quantity": float(order.quantity),
+            "status": order.status,
+            "entry_price": float(order.entry_price) if order.entry_price else None,
+            "max_entry": float(order.max_entry) if order.max_entry else None,
+            "take_profit": float(order.take_profit) if order.take_profit else None,
+            "stop_loss": float(order.stop_loss) if order.stop_loss else None,
+            "entry_interval": order.entry_interval,
+            "stop_interval": order.stop_interval,
+            "executed_price": float(order.executed_price) if order.executed_price else None,
+            "executed_at": order.executed_at.isoformat() if order.executed_at else None,
+            "closed_at": None,
+            "created_at": order.created_at.isoformat() if order.created_at else None,
+            "is_testnet": order.is_testnet,
+            "message": "TP order placed on exchange" if order.tp_order_id else "Order created without TP"
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 class OrderUpdate(BaseModel):
@@ -608,9 +515,9 @@ async def create_order(
     current_user: User = Depends(get_current_user),
     db=Depends(get_db)
 ):
-    # Validation
-    if not (order_data.stop_loss < order_data.entry_price < order_data.take_profit):
-        raise HTTPException(status_code=400, detail="Must be: Stop Loss < Entry Price < Take Profit")
+    # Validation - only require TP > SL (allow flexible positioning)
+    if order_data.take_profit <= order_data.stop_loss:
+        raise HTTPException(status_code=400, detail="Take Profit must be greater than Stop Loss")
     
     if order_data.max_entry < order_data.entry_price:
         raise HTTPException(status_code=400, detail="Max Entry must be >= Entry Price")
