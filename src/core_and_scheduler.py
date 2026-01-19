@@ -13,6 +13,7 @@ from datetime import datetime, timezone, timedelta
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.telegram_notifications import notify_open, notify_close, notify_tp_hit, notify_sl_hit
+from src.user_logger import log_event
 from models import Order, init_db, SessionLocal, APIKey, Exchange
 from sqlalchemy import and_
 
@@ -223,6 +224,11 @@ def auto_execute_pending():
                     session.commit()
 
                     tlogger.info(f"[{'PARTIAL_FILLED' if is_partial else 'EXECUTED'}] order {order.id} @ {exec_price}, qty={executed_qty}/{original_qty}, TP placed")
+                    
+                    # User log
+                    log_event(order.user_id, "ORDER_EXECUTED", 
+                              id=order.id, symbol=order.symbol, 
+                              price=exec_price, qty=executed_qty)
 
                     notify_open(SimpleNamespace(
                         symbol=order.symbol,
@@ -331,6 +337,8 @@ def check_and_execute_stop_loss():
                     session.commit()
                     
                     tlogger.info(f"[STOP LOSS] order {order.id} chiuso SL, qty={qty_to_close}/{original_qty}")
+                    log_event(order.user_id, "ORDER_CLOSED_SL", 
+                              id=order.id, symbol=order.symbol, price=last_close)
                     notify_sl_hit(order, exit_price=last_close, exchange_name=exchange_name)
                 except Exception as e:
                     tlogger.error(f"[ERROR] SL {order.id}: {e}")
@@ -376,6 +384,8 @@ def check_tp_fills():
                                         order.closed_at = datetime.now(timezone.utc)
                                         session.commit()
                                         tlogger.info(f"[TP CHECK] order {order.id} TP fillato @ {trade_price}")
+                                        log_event(order.user_id, "ORDER_CLOSED_TP", 
+                                                  id=order.id, symbol=order.symbol, price=trade_price)
                                         notify_tp_hit(order, exit_price=trade_price, exchange_name=exchange_name)
                                         break
                         except:
