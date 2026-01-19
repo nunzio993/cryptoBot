@@ -103,13 +103,9 @@ async def handle_tp_cancelled(order: Order, event: Dict, session):
         logger.info(f"[TP_CANCELLED] Order {order.id}: TP ID mismatch, skipping (got {event.get('order_id')}, expected {order.tp_order_id})")
         return
     
-    # GRACE PERIOD: Skip if order was recently modified (API is updating TP/SL)
-    # This prevents marking as CLOSED_EXTERNALLY when API is just recreating the TP
-    from datetime import timedelta
-    grace_period = datetime.now(timezone.utc) - timedelta(seconds=30)
-    last_modified = order.sl_updated_at or order.executed_at
-    if last_modified and last_modified > grace_period:
-        logger.info(f"[TP_CANCELLED] Order {order.id}: Recently modified, skipping (likely API update)")
+    # Skip if API is currently updating this order (updating flag is set)
+    if getattr(order, 'updating', False):
+        logger.info(f"[TP_CANCELLED] Order {order.id}: Skipping (API is updating)")
         return
     
     order.status = 'CLOSED_EXTERNALLY'

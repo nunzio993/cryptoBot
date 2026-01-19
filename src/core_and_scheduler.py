@@ -517,13 +517,12 @@ def check_cancelled_tp_orders():
             Order.created_at < grace_period
         ).all()
         
-        # Filter out orders that were recently updated or executed (within grace period)
+        # Filter out orders that are currently being updated by the API
         filtered_orders = []
         for order in orders_with_tp:
-            # Use sl_updated_at if available, otherwise use executed_at
-            last_modified = getattr(order, 'sl_updated_at', None) or order.executed_at
-            if last_modified and last_modified > grace_period:
-                tlogger.info(f"[TP_CHECK] Order {order.id}: Skipping (recently modified/executed)")
+            # Skip orders with updating flag set (API is modifying TP/SL)
+            if getattr(order, 'updating', False):
+                tlogger.info(f"[TP_CHECK] Order {order.id}: Skipping (API is updating)")
                 continue
             filtered_orders.append(order)
         

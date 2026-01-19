@@ -90,6 +90,7 @@ class Order(Base):
     created_at     = Column(DateTime(timezone=True), server_default=func.now())
     is_testnet     = Column(Boolean, default=False, nullable=False)
     tp_order_id    = Column(String, nullable=True)  # Binance TP order ID for accurate cancellation
+    updating       = Column(Boolean, default=False, nullable=False)  # Lock flag: True while API is updating TP/SL
 
     user = relationship("User", back_populates="orders")
     exchange = relationship("Exchange")

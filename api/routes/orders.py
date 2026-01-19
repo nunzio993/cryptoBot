@@ -792,12 +792,13 @@ async def update_order(
             except Exception:
                 pass  # If price check fails, allow the update
             
+            # Set updating flag to prevent scheduler/WebSocket from marking as CLOSED_EXTERNALLY
+            order.updating = True
+            old_tp_order_id = order.tp_order_id
+            order.tp_order_id = None
+            db.commit()  # Commit flag and clear tp_order_id before exchange operation
+            
             try:
-                # Clear tp_order_id BEFORE cancelling to prevent race condition with TP_CHECK
-                old_tp_order_id = order.tp_order_id
-                order.tp_order_id = None
-                db.commit()  # Commit immediately so TP_CHECK doesn't see the cancelled TP
-                
                 # Pass existing tp_order_id for accurate cancellation
                 new_tp_order_id = adapter.update_spot_tp_sl(
                     order.symbol,
@@ -814,8 +815,12 @@ async def update_order(
             except Exception as e:
                 # Restore tp_order_id if update failed
                 order.tp_order_id = old_tp_order_id
+                order.updating = False
                 db.commit()
                 raise HTTPException(status_code=400, detail=f"Failed to update on exchange: {str(e)}")
+            finally:
+                # Always clear the updating flag
+                order.updating = False
     
     db.commit()
     db.refresh(order)
