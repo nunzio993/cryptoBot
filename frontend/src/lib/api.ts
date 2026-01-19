@@ -277,5 +277,6 @@ export interface StatisticsResponse {
 }
 
 export const statisticsApi = {
-    get: (days: number = 30) => api.get<StatisticsResponse>("/statistics", { params: { days } }),
+    get: (days: number = 30, apiKeyId?: number) =>
+        api.get<StatisticsResponse>("/statistics", { params: { days, api_key_id: apiKeyId } }),
 };

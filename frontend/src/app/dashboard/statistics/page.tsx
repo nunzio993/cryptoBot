@@ -1,16 +1,23 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { statisticsApi, type StatisticsResponse } from "@/lib/api";
+import { statisticsApi, apiKeysApi, type StatisticsResponse, type APIKey } from "@/lib/api";
 import { Loader2, TrendingUp, TrendingDown, DollarSign, Target, Trophy, BarChart3 } from "lucide-react";
 import { useState } from "react";
 
 export default function StatisticsPage() {
     const [days, setDays] = useState(30);
+    const [selectedApiKeyId, setSelectedApiKeyId] = useState<number | undefined>(undefined);
+
+    // Fetch API keys for selector
+    const { data: apiKeys = [] } = useQuery({
+        queryKey: ["apikeys"],
+        queryFn: () => apiKeysApi.list().then((res) => res.data),
+    });
 
     const { data, isLoading } = useQuery({
-        queryKey: ["statistics", days],
-        queryFn: () => statisticsApi.get(days).then((res) => res.data),
+        queryKey: ["statistics", days, selectedApiKeyId],
+        queryFn: () => statisticsApi.get(days, selectedApiKeyId).then((res) => res.data),
     });
 
     if (isLoading) {
@@ -39,16 +46,33 @@ export default function StatisticsPage() {
                         Your trading performance
                     </p>
                 </div>
-                <select
-                    value={days}
-                    onChange={(e) => setDays(parseInt(e.target.value))}
-                    className="px-4 py-2.5 rounded-xl bg-muted border border-border focus:outline-none focus:ring-2 focus:ring-primary/50"
-                >
-                    <option value={7}>Last 7 days</option>
-                    <option value={30}>Last 30 days</option>
-                    <option value={90}>Last 90 days</option>
-                    <option value={365}>Last year</option>
-                </select>
+                <div className="flex items-center gap-3">
+                    {/* Exchange selector */}
+                    <select
+                        value={selectedApiKeyId || ""}
+                        onChange={(e) => setSelectedApiKeyId(e.target.value ? parseInt(e.target.value) : undefined)}
+                        className="px-4 py-2.5 rounded-xl bg-muted border border-border focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    >
+                        <option value="">All Exchanges</option>
+                        {apiKeys.map((key: APIKey) => (
+                            <option key={key.id} value={key.id}>
+                                {key.exchange_name} {key.is_testnet ? "(Testnet)" : ""} {key.name ? `- ${key.name}` : ""}
+                            </option>
+                        ))}
+                    </select>
+
+                    {/* Days selector */}
+                    <select
+                        value={days}
+                        onChange={(e) => setDays(parseInt(e.target.value))}
+                        className="px-4 py-2.5 rounded-xl bg-muted border border-border focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    >
+                        <option value={7}>7 days</option>
+                        <option value={30}>30 days</option>
+                        <option value={90}>90 days</option>
+                        <option value={365}>1 year</option>
+                    </select>
+                </div>
             </div>
 
             {/* Metrics Grid */}

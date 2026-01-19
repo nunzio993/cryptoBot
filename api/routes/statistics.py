@@ -7,7 +7,7 @@ from typing import List, Optional
 from datetime import date, timedelta
 from decimal import Decimal
 
-from models import SessionLocal, Order, BalanceHistory
+from models import SessionLocal, Order, BalanceHistory, APIKey
 from models import User
 from api.deps import get_current_user
 
@@ -41,13 +41,32 @@ async def get_statistics(
 ):
     """
     Get user statistics and balance history.
+    If api_key_id is provided, filter by that exchange. Otherwise, aggregate all.
     """
     with SessionLocal() as session:
-        # Calculate metrics from closed orders
-        closed_orders = session.query(Order).filter(
+        # Get exchange_id and is_testnet from api_key if provided
+        exchange_id = None
+        is_testnet = None
+        if api_key_id:
+            api_key = session.query(APIKey).filter(
+                APIKey.id == api_key_id,
+                APIKey.user_id == current_user.id
+            ).first()
+            if api_key:
+                exchange_id = api_key.exchange_id
+                is_testnet = api_key.is_testnet
+        
+        # Build order query with filters
+        order_query = session.query(Order).filter(
             Order.user_id == current_user.id,
             Order.status.in_(['CLOSED_TP', 'CLOSED_SL', 'CLOSED_MANUAL'])
-        ).all()
+        )
+        if exchange_id is not None:
+            order_query = order_query.filter(Order.exchange_id == exchange_id)
+        if is_testnet is not None:
+            order_query = order_query.filter(Order.is_testnet == is_testnet)
+        
+        closed_orders = order_query.all()
         
         total_trades = len(closed_orders)
         winning_trades = len([o for o in closed_orders if o.status == 'CLOSED_TP'])
@@ -60,25 +79,24 @@ async def get_statistics(
             qty = float(order.quantity or 0)
             
             if order.status == 'CLOSED_TP' and order.take_profit:
-                # Profit = (TP - entry) * qty
                 all_time_profit += (float(order.take_profit) - entry) * qty
             elif order.status == 'CLOSED_SL' and order.stop_loss:
-                # Loss = (SL - entry) * qty (negative)
                 all_time_profit += (float(order.stop_loss) - entry) * qty
         
         win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0
         
-        # Get balance history
+        # Build balance history query with filters
         since_date = date.today() - timedelta(days=days)
         history_query = session.query(BalanceHistory).filter(
             BalanceHistory.user_id == current_user.id,
             BalanceHistory.date >= since_date
-        ).order_by(BalanceHistory.date.asc())
+        )
+        if exchange_id is not None:
+            history_query = history_query.filter(BalanceHistory.exchange_id == exchange_id)
+        if is_testnet is not None:
+            history_query = history_query.filter(BalanceHistory.is_testnet == is_testnet)
         
-        if api_key_id:
-            # Filter by specific API key (would need exchange_id and is_testnet)
-            pass
-        
+        history_query = history_query.order_by(BalanceHistory.date.asc())
         history = history_query.all()
         
         # Current balance from most recent entry
