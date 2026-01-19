@@ -641,11 +641,12 @@ async def create_order(
             # Format quantity as string
             qty_str = ('{:.8f}'.format(qty)).rstrip('0').rstrip('.')
             
-            # Check minimum notional using adapter method
+            # Check minimum notional - use 10 as safe default for Bybit market orders
             current_price = adapter.get_symbol_price(order_data.symbol)
             notional = qty * current_price
-            if notional < min_notional:
-                raise Exception(f"Order value ${notional:.2f} below minimum ${min_notional:.2f}")
+            safe_min_notional = max(min_notional, 10) if exchange_name.lower() == "bybit" else min_notional
+            if notional < safe_min_notional:
+                raise Exception(f"Order value ${notional:.2f} below minimum ${safe_min_notional:.2f}")
             
             # Place market buy order using adapter method (works for both Binance and Bybit)
             market_order = adapter.place_order(
