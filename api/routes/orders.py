@@ -4,6 +4,7 @@ Orders routes - CRUD per ordini trading
 from datetime import datetime, timezone
 from typing import Optional, List
 from decimal import Decimal
+from types import SimpleNamespace
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
@@ -11,6 +12,8 @@ from models import Order, User, Exchange, APIKey
 from api.deps import get_db, get_current_user
 from src.adapters import BinanceAdapter
 from src.core_and_scheduler import fetch_last_closed_candle
+from src.telegram_notifications import notify_open, notify_close
+from src.trading_utils import format_quantity, format_price as trading_format_price
 
 router = APIRouter()
 
@@ -666,6 +669,18 @@ async def create_order(
             order.executed_price = Decimal(str(executed_price))
             order.executed_at = datetime.now(timezone.utc)
             db.commit()
+            
+            # Send Telegram notification for market order execution
+            try:
+                notify_open(SimpleNamespace(
+                    symbol=order.symbol,
+                    quantity=float(order.quantity),
+                    entry_price=executed_price,
+                    user_id=current_user.id,
+                    is_testnet=(network_mode == "Testnet")
+                ), exchange_name=exchange_name)
+            except Exception as notify_err:
+                print(f"[WARNING] Telegram notification failed: {notify_err}")
             db.refresh(order)
             
             # Set up TP/SL with OCO order
@@ -907,6 +922,18 @@ async def close_order(
         order.closed_at = datetime.now(timezone.utc)
         db.commit()
         
+        # Send Telegram notification for manual close
+        try:
+            notify_close(SimpleNamespace(
+                symbol=order.symbol,
+                quantity=float(order.quantity),
+                status="CLOSED_MANUAL",
+                user_id=current_user.id,
+                is_testnet=order.is_testnet
+            ), exchange_name=exchange.name)
+        except Exception as notify_err:
+            print(f"[WARNING] Telegram notification failed: {notify_err}")
+        
         # Broadcast WebSocket update
         from api.websocket_manager import manager
         await manager.broadcast_order_update(current_user.id, order_id, "CLOSED_MANUAL")
@@ -1059,24 +1086,19 @@ async def split_order(
             # We must cancel first to release liquidity, but will recreate if new TPs fail
             old_tp_order_id = order.tp_order_id
             
-            # Define formatting functions first
+            # Use centralized formatting from trading_utils
             def format_qty(qty):
-                from decimal import Decimal, ROUND_DOWN
-                step = Decimal(str(step_size))
-                qty_dec = Decimal(str(qty)).quantize(step, rounding=ROUND_DOWN)
-                return str(qty_dec).rstrip('0').rstrip('.')
+                return format_quantity(float(qty), step_size)
             
-            def format_price(price):
-                from decimal import Decimal, ROUND_DOWN
-                tick = Decimal(str(tick_size))
-                price_dec = Decimal(str(price)).quantize(tick, rounding=ROUND_DOWN)
-                return str(price_dec).rstrip('0').rstrip('.')
+            def format_price_local(price):
+                return trading_format_price(float(price), tick_size)
+
             
             import logging
             logger = logging.getLogger('orders')
             
             # Calculate old values for potential rollback
-            old_tp_price = format_price(order.take_profit) if order.take_profit else None
+            old_tp_price = format_price_local(order.take_profit) if order.take_profit else None
             old_qty = format_qty(float(order.quantity))
             
             # Cancel old TP first to release liquidity
@@ -1113,7 +1135,7 @@ async def split_order(
             
             # Create TP order for part 1
             qty1_str = format_qty(split_qty)
-            price1_str = format_price(split_data.tp1)
+            price1_str = format_price_local(split_data.tp1)
             logger.info(f"[SPLIT] Creating TP1: {qty1_str} @ {price1_str}")
             
             try:
@@ -1134,7 +1156,7 @@ async def split_order(
             
             # Create TP order for part 2
             qty2_str = format_qty(remaining_qty)
-            price2_str = format_price(split_data.tp2)
+            price2_str = format_price_local(split_data.tp2)
             logger.info(f"[SPLIT] Creating TP2: {qty2_str} @ {price2_str}")
             
             try:

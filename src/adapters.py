@@ -3,6 +3,7 @@ from models import Order, SessionLocal, APIKey, Exchange
 from binance.exceptions import BinanceAPIException
 from binance.client import Client as BinanceClient
 from binance.client import Client
+from src.trading_utils import round_to_step, format_quantity, format_price as trading_format_price
 
 import ccxt
 import math 
@@ -119,25 +120,12 @@ class BinanceAdapter(ExchangeAdapter):
             step_size = filters['LOT_SIZE']['stepSize']
             tick_size = filters['PRICE_FILTER']['tickSize']
             
-            from decimal import Decimal, ROUND_DOWN
-            
+            # Use centralized formatting functions
             def format_qty(qty):
-                step = Decimal(str(step_size)).normalize()  # "0.00100000" -> "0.001"
-                qty_dec = Decimal(str(qty))
-                # Round down to step
-                result = (qty_dec / step).quantize(Decimal('1'), rounding=ROUND_DOWN) * step
-                return str(result.normalize())
+                return format_quantity(float(qty), float(step_size))
             
             def format_price(price):
-                tick = Decimal(str(tick_size)).normalize()
-                # Handle both Decimal and float inputs, avoid scientific notation
-                if isinstance(price, Decimal):
-                    price_dec = price
-                else:
-                    price_dec = Decimal(str(float(price)))
-                result = (price_dec / tick).quantize(Decimal('1'), rounding=ROUND_DOWN) * tick
-                # Use format to avoid scientific notation
-                return f"{float(result):.10f}".rstrip('0').rstrip('.')
+                return trading_format_price(float(price) if not isinstance(price, (int, float)) else price, float(tick_size))
             
             # IMPORTANT: Validate MIN_NOTIONAL BEFORE cancelling old TP
             # This prevents orphaned positions when new TP creation would fail
