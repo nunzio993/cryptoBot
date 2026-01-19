@@ -1,7 +1,7 @@
 """
 Orders routes - CRUD per ordini trading
 """
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional, List
 from decimal import Decimal
 from types import SimpleNamespace
@@ -792,11 +792,11 @@ async def update_order(
             except Exception:
                 pass  # If price check fails, allow the update
             
-            # Set updating flag to prevent scheduler/WebSocket from marking as CLOSED_EXTERNALLY
-            order.updating = True
+            # Set protection timestamp (60 seconds) to prevent race conditions
+            order.updating_until = datetime.now(timezone.utc) + timedelta(seconds=60)
             old_tp_order_id = order.tp_order_id
             order.tp_order_id = None
-            db.commit()  # Commit flag and clear tp_order_id before exchange operation
+            db.commit()  # Commit protection and clear tp_order_id before exchange operation
             
             try:
                 # Pass existing tp_order_id for accurate cancellation
@@ -813,14 +813,12 @@ async def update_order(
                 if new_tp_order_id:
                     order.tp_order_id = new_tp_order_id
             except Exception as e:
-                # Restore tp_order_id if update failed
+                # Restore tp_order_id if update failed, clear protection
                 order.tp_order_id = old_tp_order_id
-                order.updating = False
+                order.updating_until = None
                 db.commit()
                 raise HTTPException(status_code=400, detail=f"Failed to update on exchange: {str(e)}")
-            finally:
-                # Always clear the updating flag
-                order.updating = False
+            # Note: updating_until will naturally expire after 60 seconds, no need to clear
     
     db.commit()
     db.refresh(order)

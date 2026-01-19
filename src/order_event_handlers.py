@@ -103,9 +103,10 @@ async def handle_tp_cancelled(order: Order, event: Dict, session):
         logger.info(f"[TP_CANCELLED] Order {order.id}: TP ID mismatch, skipping (got {event.get('order_id')}, expected {order.tp_order_id})")
         return
     
-    # Skip if API is currently updating this order (updating flag is set)
-    if getattr(order, 'updating', False):
-        logger.info(f"[TP_CANCELLED] Order {order.id}: Skipping (API is updating)")
+    # Skip if order is protected by updating_until timestamp (API is updating TP/SL)
+    updating_until = getattr(order, 'updating_until', None)
+    if updating_until and datetime.now(timezone.utc) < updating_until:
+        logger.info(f"[TP_CANCELLED] Order {order.id}: Skipping (protected until {updating_until})")
         return
     
     order.status = 'CLOSED_EXTERNALLY'

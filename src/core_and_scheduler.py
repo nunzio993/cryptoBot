@@ -519,10 +519,12 @@ def check_cancelled_tp_orders():
         
         # Filter out orders that are currently being updated by the API
         filtered_orders = []
+        now = datetime.now(timezone.utc)
         for order in orders_with_tp:
-            # Skip orders with updating flag set (API is modifying TP/SL)
-            if getattr(order, 'updating', False):
-                tlogger.info(f"[TP_CHECK] Order {order.id}: Skipping (API is updating)")
+            # Skip orders with updating_until in the future (API is modifying TP/SL)
+            updating_until = getattr(order, 'updating_until', None)
+            if updating_until and now < updating_until:
+                tlogger.info(f"[TP_CHECK] Order {order.id}: Skipping (protected until {updating_until})")
                 continue
             filtered_orders.append(order)
         
