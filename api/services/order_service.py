@@ -148,6 +148,7 @@ class OrderService:
             order.status = "EXECUTED"
             order.executed_price = Decimal(str(executed_price))
             order.executed_at = datetime.now(timezone.utc)
+            order.sl_updated_at = datetime.now(timezone.utc)  # For WebSocket handler grace period
             session.commit()
             
             # Set up TP/SL
@@ -424,6 +425,7 @@ class OrderService:
                 is_testnet=is_testnet,
                 executed_price=entry_price,
                 executed_at=datetime.now(timezone.utc),
+                sl_updated_at=datetime.now(timezone.utc),  # For WebSocket handler grace period
                 created_at=datetime.now(timezone.utc),
                 tp_order_id=tp_order_id
             )

@@ -668,6 +668,7 @@ async def create_order(
             order.status = "EXECUTED"
             order.executed_price = Decimal(str(executed_price))
             order.executed_at = datetime.now(timezone.utc)
+            order.sl_updated_at = datetime.now(timezone.utc)  # For WebSocket handler grace period
             db.commit()
             
             # Send Telegram notification for market order execution
