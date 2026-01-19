@@ -766,11 +766,8 @@ async def update_order(
                         detail=f"Take Profit ({new_tp}) must be greater than current price ({current_price:.2f})"
                     )
                 
-                if new_sl >= current_price:
-                    raise HTTPException(
-                        status_code=400, 
-                        detail=f"Stop Loss ({new_sl}) must be less than current price ({current_price:.2f})"
-                    )
+                # SL can be above current price for trailing stops or specific strategies
+                # No validation needed for SL vs current price
             except HTTPException:
                 raise
             except Exception:
