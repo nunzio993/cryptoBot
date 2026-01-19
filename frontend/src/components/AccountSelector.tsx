@@ -3,15 +3,16 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiKeysApi, type APIKey } from "@/lib/api";
-import { ChevronDown, Wallet } from "lucide-react";
+import { ChevronDown, Wallet, Layers } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface AccountSelectorProps {
-    selectedKeyId: number | null;
-    onSelect: (key: APIKey) => void;
+    selectedKeyId: number | null;  // null = All Exchanges
+    onSelect: (key: APIKey | null) => void;  // null = All selected
+    showAllOption?: boolean;  // Whether to show "All Exchanges" option
 }
 
-export function AccountSelector({ selectedKeyId, onSelect }: AccountSelectorProps) {
+export function AccountSelector({ selectedKeyId, onSelect, showAllOption = true }: AccountSelectorProps) {
     const [isOpen, setIsOpen] = useState(false);
 
     const { data: apiKeys = [], isLoading } = useQuery({
@@ -19,7 +20,8 @@ export function AccountSelector({ selectedKeyId, onSelect }: AccountSelectorProp
         queryFn: () => apiKeysApi.list().then((res) => res.data),
     });
 
-    const selectedKey = apiKeys.find((k) => k.id === selectedKeyId);
+    const selectedKey = selectedKeyId ? apiKeys.find((k) => k.id === selectedKeyId) : null;
+    const isAllSelected = selectedKeyId === null;
 
     if (isLoading) {
         return (
@@ -45,9 +47,13 @@ export function AccountSelector({ selectedKeyId, onSelect }: AccountSelectorProp
                     isOpen && "border-primary"
                 )}
             >
-                <Wallet className="w-4 h-4 text-primary" />
+                {isAllSelected ? (
+                    <Layers className="w-4 h-4 text-primary" />
+                ) : (
+                    <Wallet className="w-4 h-4 text-primary" />
+                )}
                 <span className="font-medium">
-                    {selectedKey?.name || "Select Account"}
+                    {isAllSelected ? "All Exchanges" : (selectedKey?.name || "Select Account")}
                 </span>
                 {selectedKey && (
                     <span className={cn(
@@ -72,6 +78,30 @@ export function AccountSelector({ selectedKeyId, onSelect }: AccountSelectorProp
                         onClick={() => setIsOpen(false)}
                     />
                     <div className="absolute right-0 top-full mt-2 w-64 bg-card border border-border rounded-xl shadow-lg z-20 overflow-hidden">
+                        {/* All Exchanges Option */}
+                        {showAllOption && (
+                            <button
+                                onClick={() => {
+                                    onSelect(null);
+                                    setIsOpen(false);
+                                }}
+                                className={cn(
+                                    "w-full flex items-center gap-3 px-4 py-3 text-left transition-colors",
+                                    "hover:bg-muted border-b border-border",
+                                    isAllSelected && "bg-primary/10"
+                                )}
+                            >
+                                <Layers className="w-5 h-5 text-primary" />
+                                <div className="flex-1">
+                                    <div className="font-medium">All Exchanges</div>
+                                    <div className="text-xs text-muted-foreground">
+                                        Aggregated data from all accounts
+                                    </div>
+                                </div>
+                            </button>
+                        )}
+
+                        {/* Individual API Keys */}
                         {apiKeys.map((key) => (
                             <button
                                 key={key.id}

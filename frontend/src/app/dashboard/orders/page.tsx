@@ -48,12 +48,17 @@ export default function OrdersPage() {
         }
     }, [selectedKeyId]);
 
-    const handleSelectKey = (key: APIKey) => {
-        setSelectedKeyId(key.id);
-        setSelectedKey(key);
+    const handleSelectKey = (key: APIKey | null) => {
+        if (key === null) {
+            setSelectedKeyId(null);
+            setSelectedKey(null);
+        } else {
+            setSelectedKeyId(key.id);
+            setSelectedKey(key);
+        }
     };
 
-    // Get network mode from selected key
+    // Get network mode from selected key (default Mainnet for All)
     const networkMode = selectedKey?.is_testnet ? "Testnet" : "Mainnet";
 
     const queryClient = useQueryClient();
@@ -61,22 +66,22 @@ export default function OrdersPage() {
     // Fetch orders
     const { data: pendingOrders = [], isLoading: pendingLoading } = useQuery({
         queryKey: ["orders", "PENDING", selectedKeyId],
-        queryFn: () => ordersApi.list("PENDING", networkMode, selectedKeyId || undefined).then((res) => res.data),
-        refetchInterval: 5000, // 5 seconds for faster updates
-        enabled: !!selectedKeyId,
+        queryFn: () => ordersApi.list("PENDING", networkMode, selectedKeyId ?? undefined).then((res) => res.data),
+        refetchInterval: 5000,
+        enabled: apiKeys.length > 0,
     });
 
     const { data: executedOrders = [], isLoading: executedLoading } = useQuery({
         queryKey: ["orders", "EXECUTED", selectedKeyId],
-        queryFn: () => ordersApi.list("EXECUTED", networkMode, selectedKeyId || undefined).then((res) => res.data),
-        refetchInterval: 5000, // 5 seconds for faster updates
-        enabled: !!selectedKeyId,
+        queryFn: () => ordersApi.list("EXECUTED", networkMode, selectedKeyId ?? undefined).then((res) => res.data),
+        refetchInterval: 5000,
+        enabled: apiKeys.length > 0,
     });
 
     const { data: closedOrders = [], isLoading: closedLoading } = useQuery({
         queryKey: ["orders", "CLOSED", selectedKeyId],
-        queryFn: () => ordersApi.list("CLOSED", networkMode, selectedKeyId || undefined).then((res) => res.data),
-        enabled: !!selectedKeyId,
+        queryFn: () => ordersApi.list("CLOSED", networkMode, selectedKeyId ?? undefined).then((res) => res.data),
+        enabled: apiKeys.length > 0,
     });
 
     // Mutations
@@ -179,10 +184,11 @@ export default function OrdersPage() {
             </div>
 
             {/* New Order Form */}
-            {showNewOrder && selectedKey && (
+            {showNewOrder && (
                 <NewOrderForm
                     networkMode={networkMode}
-                    apiKeyId={selectedKey.id}
+                    apiKeyId={selectedKeyId ?? undefined}
+                    apiKeys={apiKeys}
                     onSuccess={() => {
                         setShowNewOrder(false);
                         queryClient.invalidateQueries({ queryKey: ["orders"] });
@@ -230,7 +236,7 @@ export default function OrdersPage() {
                 />
             </div>
 
-            {/* External Holdings - Always visible */}
+            {/* External Holdings - Always visible when specific exchange selected */}
             {selectedKeyId && (
                 <HoldingsSection apiKeyId={selectedKeyId} />
             )}

@@ -55,28 +55,33 @@ export default function DashboardPage() {
         }
     }, [selectedKeyId]);
 
-    const handleSelectKey = (key: APIKey) => {
-        setSelectedKeyId(key.id);
-        setSelectedKey(key);
+    const handleSelectKey = (key: APIKey | null) => {
+        if (key === null) {
+            setSelectedKeyId(null);
+            setSelectedKey(null);
+        } else {
+            setSelectedKeyId(key.id);
+            setSelectedKey(key);
+        }
     };
 
-    // Get network mode from selected key
+    // Get network mode from selected key (default Mainnet for All)
     const networkMode = selectedKey?.is_testnet ? "Testnet" : "Mainnet";
 
     // Fetch portfolio
     const { data: portfolio, isLoading } = useQuery({
         queryKey: ["portfolio", selectedKeyId],
-        queryFn: () => ordersApi.portfolio(selectedKeyId || undefined, networkMode).then((res) => res.data),
+        queryFn: () => ordersApi.portfolio(selectedKeyId ?? undefined, networkMode).then((res) => res.data),
         refetchInterval: 5000, // 5 seconds for faster updates
-        enabled: !!selectedKeyId,
+        enabled: apiKeys.length > 0,  // Run if any API keys exist
     });
 
     // Fetch pending orders
     const { data: pendingOrders = [] } = useQuery({
         queryKey: ["orders", "PENDING", selectedKeyId],
-        queryFn: () => ordersApi.list("PENDING", networkMode, selectedKeyId || undefined).then((res) => res.data),
+        queryFn: () => ordersApi.list("PENDING", networkMode, selectedKeyId ?? undefined).then((res) => res.data),
         refetchInterval: 5000, // 5 seconds for faster updates
-        enabled: !!selectedKeyId,
+        enabled: apiKeys.length > 0,
     });
 
     const totalPnl = portfolio?.positions.reduce((sum, p) => sum + p.pnl, 0) || 0;

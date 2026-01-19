@@ -2,19 +2,24 @@
 
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { ordersApi, exchangeApi } from "@/lib/api";
+import { ordersApi, exchangeApi, type APIKey } from "@/lib/api";
 import { formatCurrency, cn } from "@/lib/utils";
-import { Loader2, TrendingUp, AlertTriangle, DollarSign } from "lucide-react";
+import { Loader2, TrendingUp, AlertTriangle, DollarSign, Wallet } from "lucide-react";
 
 interface NewOrderFormProps {
     networkMode: "Testnet" | "Mainnet";
-    apiKeyId?: number;
+    apiKeyId?: number;  // undefined = All Exchanges selected
+    apiKeys?: APIKey[];  // List of API keys for exchange selector
     onSuccess: () => void;
 }
 
 const INTERVALS = ["Market", "M5", "H1", "H4", "Daily"];
 
-export function NewOrderForm({ networkMode, apiKeyId, onSuccess }: NewOrderFormProps) {
+export function NewOrderForm({ networkMode, apiKeyId, apiKeys = [], onSuccess }: NewOrderFormProps) {
+    // When apiKeyId is undefined, user must select an exchange
+    const [selectedExchangeId, setSelectedExchangeId] = useState<number | undefined>(apiKeyId);
+    const effectiveApiKeyId = apiKeyId ?? selectedExchangeId;
+
     const [formData, setFormData] = useState({
         symbol: "",
         quantity: "",
@@ -37,9 +42,9 @@ export function NewOrderForm({ networkMode, apiKeyId, onSuccess }: NewOrderFormP
 
     // Fetch portfolio for USDC balance
     const { data: portfolio } = useQuery({
-        queryKey: ["portfolio", apiKeyId, networkMode],
-        queryFn: () => ordersApi.portfolio(apiKeyId, networkMode).then((res) => res.data),
-        enabled: !!apiKeyId,
+        queryKey: ["portfolio", effectiveApiKeyId, networkMode],
+        queryFn: () => ordersApi.portfolio(effectiveApiKeyId, networkMode).then((res) => res.data),
+        enabled: !!effectiveApiKeyId,
     });
 
     // Create order mutation
@@ -53,7 +58,7 @@ export function NewOrderForm({ networkMode, apiKeyId, onSuccess }: NewOrderFormP
             stop_loss?: number;
             entry_interval?: string;
             stop_interval?: string;
-        }) => ordersApi.create(data, networkMode, apiKeyId),
+        }) => ordersApi.create(data, networkMode, effectiveApiKeyId),
         onSuccess: () => {
             setError("");
             onSuccess();
@@ -156,6 +161,29 @@ export function NewOrderForm({ networkMode, apiKeyId, onSuccess }: NewOrderFormP
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-6">
+                {/* Exchange Selector - shown when All Exchanges is selected */}
+                {!apiKeyId && apiKeys.length > 0 && (
+                    <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20">
+                        <label className="block text-sm font-medium text-amber-500 mb-2">
+                            <Wallet className="w-4 h-4 inline mr-2" />
+                            Select Exchange for this order
+                        </label>
+                        <select
+                            value={selectedExchangeId || ""}
+                            onChange={(e) => setSelectedExchangeId(e.target.value ? parseInt(e.target.value) : undefined)}
+                            className="w-full px-4 py-2.5 rounded-xl bg-muted border border-amber-500/30 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+                            required
+                        >
+                            <option value="">Select exchange...</option>
+                            {apiKeys.map((key) => (
+                                <option key={key.id} value={key.id}>
+                                    {key.exchange_name.toUpperCase()}{key.is_testnet ? " (Testnet)" : ""} - {key.name}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                )}
+
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                     {/* Symbol */}
                     <div>
