@@ -748,6 +748,9 @@ class BybitAdapter(ExchangeAdapter):
                         '0',        # takerBuyQuoteAssetVolume
                         '0'         # ignore
                     ])
+                # Bybit returns newest first, Binance returns oldest first
+                # Reverse to match Binance format for consistent behavior
+                klines.reverse()
                 return klines
             return []
         except Exception as e:
