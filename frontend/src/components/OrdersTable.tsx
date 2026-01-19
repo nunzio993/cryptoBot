@@ -263,7 +263,7 @@ export function OrdersTable({
                             SL
                         </th>
                         <th className="text-left py-3 px-4 text-sm font-medium text-muted-foreground">
-                            Interval
+                            SL Interval
                         </th>
                         <th className="text-left py-3 px-4 text-sm font-medium text-muted-foreground">
                             {type === "closed" ? "Closed" : "Created"}
@@ -444,6 +444,15 @@ export function OrdersTable({
                                                     >
                                                         <ArrowUpDown className="w-4 h-4" />
                                                     </button>
+                                                    {type === "executed" && onSplit && (
+                                                        <button
+                                                            onClick={() => openSplit(order)}
+                                                            className="p-2 rounded-lg bg-purple-500/10 text-purple-500 hover:bg-purple-500/20 transition-colors"
+                                                            title="Split Order"
+                                                        >
+                                                            <Scissors className="w-4 h-4" />
+                                                        </button>
+                                                    )}
                                                     {type === "pending" && onCancel && (
                                                         <button
                                                             onClick={() => onCancel(order.id)}
@@ -459,15 +468,6 @@ export function OrdersTable({
                                                             title="Close Order"
                                                         >
                                                             <X className="w-4 h-4" />
-                                                        </button>
-                                                    )}
-                                                    {type === "executed" && onSplit && (
-                                                        <button
-                                                            onClick={() => openSplit(order)}
-                                                            className="p-2 rounded-lg bg-purple-500/10 text-purple-500 hover:bg-purple-500/20 transition-colors"
-                                                            title="Split Order"
-                                                        >
-                                                            <Scissors className="w-4 h-4" />
                                                         </button>
                                                     )}
                                                 </>
