@@ -138,7 +138,7 @@ async def get_portfolio(
         # Check if quantity is below minimum sellable (skip dust positions)
         try:
             if hasattr(adapter, 'client'):
-                symbol_info = adapter.client.get_symbol_info(order.symbol)
+                symbol_info = adapter.get_symbol_info(order.symbol)
                 if symbol_info:
                     filters = {f['filterType']: f for f in symbol_info['filters']}
                     min_qty = float(filters.get('LOT_SIZE', {}).get('minQty', 0))
@@ -629,7 +629,7 @@ async def create_order(
     if is_market_order:
         try:
             # Get symbol info for precision
-            symbol_info = adapter.client.get_symbol_info(order_data.symbol)
+            symbol_info = adapter.get_symbol_info(order_data.symbol)
             filters = {f['filterType']: f for f in symbol_info['filters']}
             step_size = float(filters['LOT_SIZE']['stepSize'])
             min_qty = float(filters['LOT_SIZE']['minQty'])
@@ -878,7 +878,7 @@ async def close_order(
                 break
         balance = adapter.get_balance(asset_name)
         
-        symbol_info = adapter.client.get_symbol_info(order.symbol)
+        symbol_info = adapter.get_symbol_info(order.symbol)
         filters = {f['filterType']: f for f in symbol_info['filters']}
         step_size = float(filters['LOT_SIZE']['stepSize'])
         min_qty = float(filters['LOT_SIZE']['minQty'])
@@ -1027,7 +1027,7 @@ async def split_order(
             
             # Get symbol info for quantity formatting and validation FIRST
             # IMPORTANT: Validate BEFORE cancelling TP to avoid orphaned positions
-            symbol_info = adapter.client.get_symbol_info(order.symbol)
+            symbol_info = adapter.get_symbol_info(order.symbol)
             filters = {f['filterType']: f for f in symbol_info['filters']}
             step_size = float(filters['LOT_SIZE']['stepSize'])
             tick_size = float(filters['PRICE_FILTER']['tickSize'])

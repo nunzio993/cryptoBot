@@ -237,7 +237,7 @@ async def _resize_tp_order(order: Order, new_qty: float, exchange_name: str, tes
         raise
     
     # Get symbol info for formatting
-    symbol_info = adapter.client.get_symbol_info(order.symbol)
+    symbol_info = adapter.get_symbol_info(order.symbol)
     filters = {f['filterType']: f for f in symbol_info['filters']}
     step_size = float(filters['LOT_SIZE']['stepSize'])
     tick_size = float(filters['PRICE_FILTER']['tickSize'])

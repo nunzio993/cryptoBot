@@ -167,7 +167,7 @@ def auto_execute_pending():
                 )
 
                 try:
-                    symbol_info = adapter.client.get_symbol_info(order.symbol)
+                    symbol_info = adapter.get_symbol_info(order.symbol)
                     filters = {f['filterType']: f for f in symbol_info['filters']}
                     step_size = float(filters['LOT_SIZE']['stepSize'])
                     tick_size = float(filters['PRICE_FILTER']['tickSize'])
@@ -284,7 +284,7 @@ def check_and_execute_stop_loss():
                     free_bal = float(balance_info.get('free', 0))
                     locked_bal = float(balance_info.get('locked', 0))
                     balance = free_bal + locked_bal
-                    symbol_info = adapter.client.get_symbol_info(order.symbol)
+                    symbol_info = adapter.get_symbol_info(order.symbol)
                     filters = {f['filterType']: f for f in symbol_info['filters']}
                     step_size = float(filters['LOT_SIZE']['stepSize'])
 
@@ -407,7 +407,7 @@ def sync_orders():
                 min_qty = 0.0
                 try:
                     if hasattr(adapter, 'client'):
-                        symbol_info = adapter.client.get_symbol_info(order.symbol)
+                        symbol_info = adapter.get_symbol_info(order.symbol)
                         if symbol_info:
                             filters = {f['filterType']: f for f in symbol_info['filters']}
                             min_qty = float(filters['LOT_SIZE']['minQty'])
@@ -450,7 +450,7 @@ def sync_orders():
                                     tlogger.warning(f"[SYNC] Errore cancellazione ordine: {cancel_err}")
                             
                             # Get symbol info for formatting
-                            symbol_info = adapter.client.get_symbol_info(order.symbol)
+                            symbol_info = adapter.get_symbol_info(order.symbol)
                             if symbol_info:
                                 filters = {f['filterType']: f for f in symbol_info['filters']}
                                 step_size = float(filters['LOT_SIZE']['stepSize'])
