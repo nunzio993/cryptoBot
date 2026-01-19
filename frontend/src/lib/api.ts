@@ -109,15 +109,26 @@ export interface HoldingsResponse {
 }
 
 // API functions
+// Helper to filter out undefined params
+const filterParams = (params: Record<string, any>) => {
+    const filtered: Record<string, any> = {};
+    for (const [key, value] of Object.entries(params)) {
+        if (value !== undefined && value !== null) {
+            filtered[key] = value;
+        }
+    }
+    return filtered;
+};
+
 export const ordersApi = {
     list: (status?: string, networkMode?: string, apiKeyId?: number) =>
-        api.get<Order[]>("/orders", { params: { status, network_mode: networkMode, api_key_id: apiKeyId } }),
+        api.get<Order[]>("/orders", { params: filterParams({ status, network_mode: networkMode, api_key_id: apiKeyId }) }),
 
     holdings: (apiKeyId: number, page: number = 1) =>
         api.get<HoldingsResponse>("/orders/holdings", { params: { api_key_id: apiKeyId, page, per_page: 10 } }),
 
     portfolio: (apiKeyId?: number, networkMode: string = "Mainnet") =>
-        api.get<Portfolio>("/orders/portfolio", { params: { api_key_id: apiKeyId, network_mode: networkMode } }),
+        api.get<Portfolio>("/orders/portfolio", { params: filterParams({ api_key_id: apiKeyId, network_mode: networkMode }) }),
 
     create: (data: {
         symbol: string;
