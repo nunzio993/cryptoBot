@@ -34,10 +34,11 @@ export function NewOrderForm({ networkMode, apiKeyId, apiKeys = [], onSuccess }:
     const [loadingPrice, setLoadingPrice] = useState(false);
     const [usdcPercent, setUsdcPercent] = useState(100);
 
-    // Fetch symbols
-    const { data: symbols = [] } = useQuery({
-        queryKey: ["symbols"],
-        queryFn: () => exchangeApi.symbols("USDC").then((res) => res.data),
+    // Fetch symbols for selected exchange only
+    const { data: symbols = [], isLoading: loadingSymbols } = useQuery({
+        queryKey: ["symbols", effectiveApiKeyId],
+        queryFn: () => exchangeApi.symbols("USDC", effectiveApiKeyId).then((res) => res.data),
+        enabled: !!effectiveApiKeyId,  // Only fetch when exchange is selected
     });
 
     // Fetch portfolio for USDC balance
@@ -194,15 +195,23 @@ export function NewOrderForm({ networkMode, apiKeyId, apiKeys = [], onSuccess }:
                             <select
                                 value={formData.symbol}
                                 onChange={(e) => handleSymbolChange(e.target.value)}
-                                className="w-full px-4 py-2.5 rounded-xl bg-muted border border-border focus:outline-none focus:ring-2 focus:ring-primary/50"
-                                disabled={loadingPrice}
+                                className="w-full px-4 py-2.5 rounded-xl bg-muted border border-border focus:outline-none focus:ring-2 focus:ring-primary/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                                disabled={loadingPrice || loadingSymbols || !effectiveApiKeyId}
                             >
-                                <option value="">Select symbol</option>
-                                {symbols.map((s) => (
-                                    <option key={s.symbol} value={s.symbol}>
-                                        {s.symbol}
-                                    </option>
-                                ))}
+                                {!effectiveApiKeyId ? (
+                                    <option value="">Select exchange first</option>
+                                ) : loadingSymbols ? (
+                                    <option value="">Loading symbols...</option>
+                                ) : (
+                                    <>
+                                        <option value="">Select symbol</option>
+                                        {symbols.map((s) => (
+                                            <option key={s.symbol} value={s.symbol}>
+                                                {s.symbol}
+                                            </option>
+                                        ))}
+                                    </>
+                                )}
                             </select>
                             {loadingPrice && (
                                 <Loader2 className="absolute right-10 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-primary" />

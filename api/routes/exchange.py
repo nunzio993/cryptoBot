@@ -84,8 +84,55 @@ async def get_balance(
 
 @router.get("/symbols", response_model=List[SymbolResponse])
 async def get_symbols(
-    quote_asset: str = Query("USDC", description="Filter by quote asset")
+    quote_asset: str = Query("USDC", description="Filter by quote asset"),
+    api_key_id: int = Query(None, description="API key ID to fetch symbols from that exchange"),
+    current_user: User = Depends(get_current_user),
+    db=Depends(get_db)
 ):
+    """
+    Returns symbols for the selected exchange.
+    If api_key_id is provided, fetches live from that exchange.
+    Otherwise falls back to static Binance list.
+    """
+    if api_key_id:
+        from src.exchange_factory import ExchangeFactory
+        from src.crypto_utils import decrypt_api_key
+        
+        # Get API key
+        key = db.query(APIKey).filter(
+            APIKey.id == api_key_id,
+            APIKey.user_id == current_user.id
+        ).first()
+        
+        if not key:
+            raise HTTPException(status_code=400, detail="API key not found")
+        
+        # Get exchange
+        exchange = db.query(Exchange).filter_by(id=key.exchange_id).first()
+        
+        # Decrypt keys
+        decrypted_key = decrypt_api_key(key.api_key, current_user.id)
+        decrypted_secret = decrypt_api_key(key.secret_key, current_user.id)
+        
+        adapter = ExchangeFactory.create(
+            exchange.name,
+            decrypted_key,
+            decrypted_secret,
+            testnet=key.is_testnet
+        )
+        
+        try:
+            # Get all tickers and filter by quote asset
+            tickers = adapter.get_all_tickers()
+            symbols = [t['symbol'] for t in tickers if t['symbol'].endswith(quote_asset)]
+            return [SymbolResponse(symbol=s) for s in sorted(symbols)]
+        except Exception as e:
+            # Fallback to static list if exchange fetch fails
+            print(f"Failed to fetch symbols from {exchange.name}: {e}")
+            filtered = [s for s in SYMBOLS if s.endswith(quote_asset)]
+            return [SymbolResponse(symbol=s) for s in filtered]
+    
+    # Fallback to static Binance list
     filtered = [s for s in SYMBOLS if s.endswith(quote_asset)]
     return [SymbolResponse(symbol=s) for s in filtered]
 

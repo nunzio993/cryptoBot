@@ -176,8 +176,8 @@ export const exchangeApi = {
     balance: (asset: string = "USDC", networkMode: string = "Testnet") =>
         api.get<Balance>("/exchange/balance", { params: { asset, network_mode: networkMode } }),
 
-    symbols: (quoteAsset: string = "USDC") =>
-        api.get<Symbol[]>("/exchange/symbols", { params: { quote_asset: quoteAsset } }),
+    symbols: (quoteAsset: string = "USDC", apiKeyId?: number) =>
+        api.get<Symbol[]>("/exchange/symbols", { params: filterParams({ quote_asset: quoteAsset, api_key_id: apiKeyId }) }),
 
     price: (symbol: string, networkMode: string = "Testnet") =>
         api.get<{ symbol: string; price: number }>("/exchange/price", {
