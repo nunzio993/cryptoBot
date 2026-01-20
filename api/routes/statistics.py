@@ -105,16 +105,31 @@ async def get_statistics(
         history_query = history_query.order_by(BalanceHistory.date.asc())
         history = history_query.all()
         
-        # Current balance from most recent entry
-        current_balance = float(history[-1].total_balance) if history else 0.0
-        
-        balance_history = [
-            BalancePoint(
-                date=h.date.isoformat(),
-                total=float(h.total_balance)
-            )
-            for h in history
-        ]
+        # Aggregate by date when "All Exchanges" is selected
+        if exchange_id is None:
+            # Group by date and sum totals
+            daily_totals = {}
+            for h in history:
+                date_str = h.date.isoformat()
+                if date_str not in daily_totals:
+                    daily_totals[date_str] = 0.0
+                daily_totals[date_str] += float(h.total_balance)
+            
+            balance_history = [
+                BalancePoint(date=date_str, total=round(total, 2))
+                for date_str, total in sorted(daily_totals.items())
+            ]
+            current_balance = balance_history[-1].total if balance_history else 0.0
+        else:
+            # Single exchange - show as-is
+            current_balance = float(history[-1].total_balance) if history else 0.0
+            balance_history = [
+                BalancePoint(
+                    date=h.date.isoformat(),
+                    total=float(h.total_balance)
+                )
+                for h in history
+            ]
         
         return StatisticsResponse(
             metrics=StatisticsMetrics(
