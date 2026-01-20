@@ -601,13 +601,16 @@ def record_daily_balance():
         
         for api_key in api_keys:
             try:
-                adapter = get_exchange_adapter(api_key.user_id, None, api_key.is_testnet)
+                # Get exchange info first (need exchange name for adapter)
+                exchange = session.query(Exchange).filter_by(id=api_key.exchange_id).first()
+                if not exchange:
+                    tlogger.warning(f"[BALANCE] Exchange not found for api_key {api_key.id}")
+                    continue
+                exchange_name = exchange.name
+                
+                adapter = get_exchange_adapter(api_key.user_id, exchange_name, api_key.is_testnet)
                 if not adapter:
                     continue
-                
-                # Get exchange info
-                exchange = session.query(Exchange).filter_by(id=api_key.exchange_id).first()
-                exchange_name = exchange.name if exchange else "unknown"
                 
                 # Get USDC balance
                 usdc_info = adapter.get_asset_balance("USDC")
