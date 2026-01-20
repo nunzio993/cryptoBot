@@ -60,6 +60,25 @@ class BinanceOrderTester:
             self.results.append(TestResult(name, False, str(e)[:100], duration))
             self.log(f"  ❌ Failed: {e}")
     
+    def format_qty(self, symbol: str, qty: float) -> str:
+        """Format quantity according to symbol's LOT_SIZE filter"""
+        info = self.adapter.get_symbol_info(symbol)
+        filters = {f['filterType']: f for f in info.get('filters', [])}
+        step_size = float(filters.get('LOT_SIZE', {}).get('stepSize', '0.00000001'))
+        
+        # Calculate precision from step size
+        import math
+        if step_size >= 1:
+            precision = 0
+        else:
+            precision = abs(int(round(math.log10(step_size))))
+        
+        # Truncate to precision
+        truncated = self.adapter.truncate(qty, precision)
+        
+        # Format as string without trailing zeros
+        return ('{:.8f}'.format(truncated)).rstrip('0').rstrip('.')
+    
     # ============ CONNECTIVITY TESTS ============
     
     def test_get_symbol_price(self):
@@ -204,17 +223,18 @@ class BinanceOrderTester:
     def test_market_buy_sell_cycle(self):
         """Test complete buy/sell cycle"""
         price = self.adapter.get_symbol_price(self.test_symbol)
-        qty = round(15 / price, 4)  # ~$15 worth
+        raw_qty = 15 / price  # ~$15 worth
+        qty = self.format_qty(self.test_symbol, raw_qty)
         
         # Buy
-        buy_order = self.adapter.order_market_buy(self.test_symbol, qty)
+        buy_order = self.adapter.order_market_buy(self.test_symbol, float(qty))
         buy_id = buy_order.get('orderId')
         self.log(f"    Buy order: {buy_id}")
         
         time.sleep(1)
         
         # Sell
-        sell_order = self.adapter.close_position_market(self.test_symbol, qty)
+        sell_order = self.adapter.close_position_market(self.test_symbol, float(qty))
         sell_id = sell_order.get('orderId')
         
         return f"Buy: {buy_id}, Sell: {sell_id}"
@@ -310,7 +330,7 @@ class BinanceOrderTester:
     def test_multiple_limit_orders(self):
         """Test creating multiple limit orders"""
         price = self.adapter.get_symbol_price(self.test_symbol)
-        qty = round(8 / price, 4)
+        qty = self.format_qty(self.test_symbol, 8 / price)
         
         order_ids = []
         for pct in [0.85, 0.80, 0.75]:
@@ -405,7 +425,7 @@ class BinanceOrderTester:
     def test_tp_multiple_updates(self):
         """Test updating TP multiple times"""
         price = self.adapter.get_symbol_price(self.test_symbol)
-        qty = round(12 / price, 4)
+        qty = float(self.format_qty(self.test_symbol, 12 / price))
         
         # Buy
         self.adapter.order_market_buy(self.test_symbol, qty)
@@ -439,7 +459,7 @@ class BinanceOrderTester:
     def test_full_trade_lifecycle(self):
         """Test complete trade: buy -> hold -> update TP -> close"""
         price = self.adapter.get_symbol_price(self.test_symbol)
-        qty = round(15 / price, 4)
+        qty = float(self.format_qty(self.test_symbol, 15 / price))
         
         # 1. Buy
         buy = self.adapter.order_market_buy(self.test_symbol, qty)
@@ -478,16 +498,17 @@ class BinanceOrderTester:
     # ============ EDGE CASE TESTS ============
     
     def test_min_notional_rejection(self):
-        """Test that orders below min notional are rejected"""
+        """Test that very small orders are rejected (MIN_NOTIONAL or LOT_SIZE)"""
         try:
             price = self.adapter.get_symbol_price(self.test_symbol)
-            tiny_qty = round(0.5 / price, 6)  # ~$0.50
+            tiny_qty = round(0.5 / price, 8)  # ~$0.50 - very small
             
             self.adapter.order_market_buy(self.test_symbol, tiny_qty)
             return "UNEXPECTED: Order should have been rejected"
         except Exception as e:
-            if any(x in str(e).lower() for x in ["notional", "min_notional", "minimum"]):
-                return "Correctly rejected: MIN_NOTIONAL"
+            error_str = str(e).lower()
+            if any(x in error_str for x in ["notional", "min_notional", "minimum", "lot_size", "lot size"]):
+                return f"Correctly rejected: {str(e)[:40]}"
             raise
     
     def test_invalid_symbol(self):
