@@ -208,7 +208,7 @@ class BinanceOrderTester:
     def test_market_buy_small(self):
         """Test small market buy"""
         price = self.adapter.get_symbol_price(self.test_symbol)
-        qty = round(10 / price, 4)  # ~$10 worth
+        qty = float(self.format_qty(self.test_symbol, 10 / price))  # ~$10 worth
         
         buy_order = self.adapter.order_market_buy(self.test_symbol, qty)
         assert buy_order.get('orderId'), "Buy should return orderId"
@@ -223,18 +223,17 @@ class BinanceOrderTester:
     def test_market_buy_sell_cycle(self):
         """Test complete buy/sell cycle"""
         price = self.adapter.get_symbol_price(self.test_symbol)
-        raw_qty = 15 / price  # ~$15 worth
-        qty = self.format_qty(self.test_symbol, raw_qty)
+        qty = float(self.format_qty(self.test_symbol, 15 / price))  # ~$15 worth
         
         # Buy
-        buy_order = self.adapter.order_market_buy(self.test_symbol, float(qty))
+        buy_order = self.adapter.order_market_buy(self.test_symbol, qty)
         buy_id = buy_order.get('orderId')
         self.log(f"    Buy order: {buy_id}")
         
         time.sleep(1)
         
         # Sell
-        sell_order = self.adapter.close_position_market(self.test_symbol, float(qty))
+        sell_order = self.adapter.close_position_market(self.test_symbol, qty)
         sell_id = sell_order.get('orderId')
         
         return f"Buy: {buy_id}, Sell: {sell_id}"
@@ -243,7 +242,7 @@ class BinanceOrderTester:
         """Test limit order 10% below market"""
         price = self.adapter.get_symbol_price(self.test_symbol)
         limit_price = round(price * 0.90, 2)
-        qty = round(10 / price, 4)
+        qty = self.format_qty(self.test_symbol, 10 / price)
         
         order = self.adapter.client.create_order(
             symbol=self.test_symbol,
@@ -266,7 +265,7 @@ class BinanceOrderTester:
         """Test limit sell order 10% above market"""
         # First buy some
         price = self.adapter.get_symbol_price(self.test_symbol)
-        qty = round(10 / price, 4)
+        qty = float(self.format_qty(self.test_symbol, 10 / price))
         
         self.adapter.order_market_buy(self.test_symbol, qty)
         time.sleep(0.5)
@@ -278,7 +277,7 @@ class BinanceOrderTester:
             side='SELL',
             type='LIMIT',
             timeInForce='GTC',
-            quantity=qty,
+            quantity=self.format_qty(self.test_symbol, qty),
             price=sell_price
         )
         order_id = order.get('orderId')
@@ -302,7 +301,7 @@ class BinanceOrderTester:
         """Test open orders with active order"""
         price = self.adapter.get_symbol_price(self.test_symbol)
         limit_price = round(price * 0.85, 2)
-        qty = round(10 / price, 4)
+        qty = self.format_qty(self.test_symbol, 10 / price)
         
         # Create order
         order = self.adapter.client.create_order(
@@ -361,7 +360,7 @@ class BinanceOrderTester:
     def test_tp_create(self):
         """Test creating a TP order"""
         price = self.adapter.get_symbol_price(self.test_symbol)
-        qty = round(10 / price, 4)
+        qty = float(self.format_qty(self.test_symbol, 10 / price))
         
         # Buy
         self.adapter.order_market_buy(self.test_symbol, qty)
@@ -389,7 +388,7 @@ class BinanceOrderTester:
     def test_tp_update(self):
         """Test updating a TP order"""
         price = self.adapter.get_symbol_price(self.test_symbol)
-        qty = round(10 / price, 4)
+        qty = float(self.format_qty(self.test_symbol, 10 / price))
         
         # Buy
         self.adapter.order_market_buy(self.test_symbol, qty)
@@ -531,7 +530,7 @@ class BinanceOrderTester:
         """Test cancelling an already cancelled order"""
         price = self.adapter.get_symbol_price(self.test_symbol)
         limit_price = round(price * 0.80, 2)
-        qty = round(10 / price, 4)
+        qty = self.format_qty(self.test_symbol, 10 / price)
         
         # Create and cancel
         order = self.adapter.client.create_order(
@@ -619,7 +618,7 @@ class BinanceOrderTester:
     def test_tp_below_current_price(self):
         """Test TP price below current market (would execute immediately)"""
         price = self.adapter.get_symbol_price(self.test_symbol)
-        qty = round(10 / price, 4)
+        qty = float(self.format_qty(self.test_symbol, 10 / price))
         
         # Buy
         self.adapter.order_market_buy(self.test_symbol, qty)
