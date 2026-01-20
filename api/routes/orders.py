@@ -65,8 +65,11 @@ async def get_portfolio(
         if not keys[0]:
             raise HTTPException(status_code=400, detail="API key not found")
     else:
-        # Aggregate all API keys
-        keys = db.query(APIKey).filter(APIKey.user_id == current_user.id).all()
+        # Aggregate all API keys - ONLY mainnet (testnet data not useful for aggregation)
+        keys = db.query(APIKey).filter(
+            APIKey.user_id == current_user.id,
+            APIKey.is_testnet == False
+        ).all()
         if not keys:
             return PortfolioResponse(
                 usdc_total=0, usdc_free=0, usdc_locked=0, usdc_blocked=0,
@@ -485,6 +488,9 @@ async def list_orders(
     elif network_mode:
         # Fallback to network_mode filter
         query = query.filter(Order.is_testnet == (network_mode == "Testnet"))
+    else:
+        # Default to mainnet only when "All Exchanges" is selected
+        query = query.filter(Order.is_testnet == False)
     
     if status:
         if status == "CLOSED":
