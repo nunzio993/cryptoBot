@@ -3,7 +3,7 @@ import sys
 import logging
 import pytz
 from apscheduler.schedulers.blocking import BlockingScheduler
-from src.core_and_scheduler import auto_execute_pending, check_and_execute_stop_loss, sync_orders, check_tp_fills, check_cancelled_tp_orders
+from src.core_and_scheduler import auto_execute_pending, check_and_execute_stop_loss, sync_orders, check_tp_fills, check_cancelled_tp_orders, record_daily_balance
 
 # Root logger
 root = logging.getLogger()
@@ -52,7 +52,9 @@ if __name__ == "__main__":
     sched.add_job(scheduled_job, 'interval', minutes=1, id='exec_pending')
     sched.add_job(check_and_execute_stop_loss, 'interval', seconds=30, id='check_sl_fast')
     sched.add_job(check_cancelled_tp_orders, 'interval', seconds=10, id='check_tp_cancelled')
-    root.info("Scheduler started: orders every 1 min, SL every 30 sec, TP check every 10 sec")
+    # Record daily balance at midnight UTC
+    sched.add_job(record_daily_balance, 'cron', hour=0, minute=0, timezone=pytz.UTC, id='record_balance')
+    root.info("Scheduler started: orders every 1 min, SL every 30 sec, TP check every 10 sec, balance at 00:00 UTC")
     
     try:
         sched.start()
