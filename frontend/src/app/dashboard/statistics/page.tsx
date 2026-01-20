@@ -170,31 +170,32 @@ export default function StatisticsPage() {
 
                         {/* Chart area */}
                         <div className="ml-16 h-full relative">
-                            <svg className="w-full h-full" preserveAspectRatio="none">
+                            <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
                                 {/* Grid lines */}
-                                <line x1="0" y1="50%" x2="100%" y2="50%" stroke="currentColor" strokeOpacity="0.1" />
+                                <line x1="0" y1="50" x2="100" y2="50" stroke="currentColor" strokeOpacity="0.1" />
 
                                 {/* Area fill under line */}
                                 <polygon
                                     fill="url(#areaGradient)"
-                                    points={`0%,100% ${history.map((h, i) => {
+                                    points={`0,100 ${history.map((h, i) => {
                                         const x = history.length === 1 ? 50 : (i / (history.length - 1)) * 100;
                                         const y = 100 - ((h.total - minBalance) / range) * 100;
-                                        return `${x}%,${y}%`;
-                                    }).join(' ')} 100%,100%`}
+                                        return `${x},${y}`;
+                                    }).join(' ')} 100,100`}
                                 />
 
                                 {/* Line chart */}
                                 <polyline
                                     fill="none"
                                     stroke="#10b981"
-                                    strokeWidth="3"
+                                    strokeWidth="2"
+                                    vectorEffect="non-scaling-stroke"
                                     strokeLinecap="round"
                                     strokeLinejoin="round"
                                     points={history.map((h, i) => {
                                         const x = history.length === 1 ? 50 : (i / (history.length - 1)) * 100;
                                         const y = 100 - ((h.total - minBalance) / range) * 100;
-                                        return `${x}%,${y}%`;
+                                        return `${x},${y}`;
                                     }).join(' ')}
                                 />
 
