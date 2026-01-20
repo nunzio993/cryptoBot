@@ -65,6 +65,9 @@ async def get_statistics(
             order_query = order_query.filter(Order.exchange_id == exchange_id)
         if is_testnet is not None:
             order_query = order_query.filter(Order.is_testnet == is_testnet)
+        else:
+            # Default to mainnet only when "All Exchanges" is selected
+            order_query = order_query.filter(Order.is_testnet == False)
         
         closed_orders = order_query.all()
         
@@ -95,6 +98,9 @@ async def get_statistics(
             history_query = history_query.filter(BalanceHistory.exchange_id == exchange_id)
         if is_testnet is not None:
             history_query = history_query.filter(BalanceHistory.is_testnet == is_testnet)
+        else:
+            # Default to mainnet only when "All Exchanges" is selected
+            history_query = history_query.filter(BalanceHistory.is_testnet == False)
         
         history_query = history_query.order_by(BalanceHistory.date.asc())
         history = history_query.all()
