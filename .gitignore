@@ -38,3 +38,4 @@ tmp/
 # Escludi backup database
 *.dump
 backup*.sql
+DEPLOYMENT.md
