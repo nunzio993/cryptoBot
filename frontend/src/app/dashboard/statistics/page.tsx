@@ -31,9 +31,12 @@ export default function StatisticsPage() {
     const metrics = data?.metrics;
     const history = data?.balance_history || [];
 
-    // Calculate chart dimensions
-    const maxBalance = Math.max(...history.map(h => h.total), 1);
-    const minBalance = Math.min(...history.map(h => h.total), 0);
+    // Calculate chart dimensions with padding for better visibility
+    const dataMin = history.length > 0 ? Math.min(...history.map(h => h.total)) : 0;
+    const dataMax = history.length > 0 ? Math.max(...history.map(h => h.total)) : 1;
+    const padding = (dataMax - dataMin) * 0.1 || dataMax * 0.1 || 50; // 10% padding or $50 minimum
+    const minBalance = Math.max(0, dataMin - padding);
+    const maxBalance = dataMax + padding;
     const range = maxBalance - minBalance || 1;
 
     return (
@@ -171,23 +174,39 @@ export default function StatisticsPage() {
                                 {/* Grid lines */}
                                 <line x1="0" y1="50%" x2="100%" y2="50%" stroke="currentColor" strokeOpacity="0.1" />
 
+                                {/* Area fill under line */}
+                                <polygon
+                                    fill="url(#areaGradient)"
+                                    points={`0%,100% ${history.map((h, i) => {
+                                        const x = history.length === 1 ? 50 : (i / (history.length - 1)) * 100;
+                                        const y = 100 - ((h.total - minBalance) / range) * 100;
+                                        return `${x}%,${y}%`;
+                                    }).join(' ')} 100%,100%`}
+                                />
+
                                 {/* Line chart */}
                                 <polyline
                                     fill="none"
-                                    stroke="url(#gradient)"
-                                    strokeWidth="2"
+                                    stroke="#10b981"
+                                    strokeWidth="3"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
                                     points={history.map((h, i) => {
-                                        const x = (i / (history.length - 1)) * 100;
+                                        const x = history.length === 1 ? 50 : (i / (history.length - 1)) * 100;
                                         const y = 100 - ((h.total - minBalance) / range) * 100;
                                         return `${x}%,${y}%`;
                                     }).join(' ')}
                                 />
 
-                                {/* Gradient definition */}
+                                {/* Gradient definitions */}
                                 <defs>
                                     <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="0%">
                                         <stop offset="0%" stopColor="#10b981" />
                                         <stop offset="100%" stopColor="#3b82f6" />
+                                    </linearGradient>
+                                    <linearGradient id="areaGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                                        <stop offset="0%" stopColor="#10b981" stopOpacity="0.3" />
+                                        <stop offset="100%" stopColor="#10b981" stopOpacity="0" />
                                     </linearGradient>
                                 </defs>
                             </svg>
