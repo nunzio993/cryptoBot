@@ -22,18 +22,37 @@ init_db()
 # qui la sessione si chiude sempre, anche in caso di errore
 with SessionLocal() as session:
     INTERVAL_MAP = {
+        # UI format -> API format
         'M5':    '5m',
         'H1':    '1h',
         'H4':    '4h',
         'Daily': '1d',
+        # API format -> API format (identity mapping for compatibility)
+        '5m':    '5m',
+        '1h':    '1h',
+        '4h':    '4h',
+        '1d':    '1d',
+        # Market orders don't use candle intervals, but map to 1m for safety
+        'Market': '1m',
     }
     
     # Durata in secondi per ogni intervallo
+    # IMPORTANT: Include BOTH UI format AND API format keys!
+    # Bug fix: If only UI format was included, '1d' would fallback to 5*60 (5 minutes)
     INTERVAL_SECONDS = {
+        # UI format
         'M5':    5 * 60,
         'H1':    60 * 60,
         'H4':    4 * 60 * 60,
         'Daily': 24 * 60 * 60,
+        # API format (same values, different keys)
+        '5m':    5 * 60,
+        '1h':    60 * 60,
+        '4h':    4 * 60 * 60,
+        '1d':    24 * 60 * 60,
+        # Market orders - use 1 minute
+        'Market': 60,
+        '1m':    60,
     }
 
 tlogger = logging.getLogger('core')
@@ -42,7 +61,10 @@ tlogger.setLevel(logging.INFO)
 def get_candle_close_time(candle_open_ts: datetime, interval: str) -> datetime:
     """Calcola il timestamp di CHIUSURA della candela"""
     from datetime import timedelta
-    seconds = INTERVAL_SECONDS.get(interval, 5 * 60)
+    seconds = INTERVAL_SECONDS.get(interval)
+    if seconds is None:
+        tlogger.warning(f"[WARN] Unknown interval '{interval}' in get_candle_close_time, using 5 minute default")
+        seconds = 5 * 60
     return candle_open_ts + timedelta(seconds=seconds)
 
 def fetch_last_closed_candle(symbol: str, interval: str, client: Client):
@@ -268,7 +290,16 @@ def check_and_execute_stop_loss():
 
             # Considera la candela daily/interval di stop, non di entry
             interval = order.stop_interval if order.stop_interval else order.entry_interval
-            candle = fetch_last_closed_candle(order.symbol, interval, client)
+            
+            try:
+                candle = fetch_last_closed_candle(order.symbol, interval, client)
+                if not candle or len(candle) < 5:
+                    tlogger.error(f"[SL_ERROR] Order {order.id}: Invalid candle data received for {order.symbol} interval {interval}")
+                    continue
+            except Exception as candle_err:
+                tlogger.error(f"[SL_ERROR] Order {order.id}: Failed to fetch candle for {order.symbol}: {candle_err}")
+                continue
+                
             last_close = float(candle[4])
             ts_candle = datetime.fromtimestamp(candle[0] / 1000, tz=timezone.utc)
             candle_close_time = get_candle_close_time(ts_candle, interval)
@@ -277,6 +308,21 @@ def check_and_execute_stop_loss():
             # Use sl_updated_at if SL was modified, otherwise use executed_at
             # Strict > ensures we wait for a candle that CLOSES after modification
             reference_time = order.sl_updated_at if order.sl_updated_at else order.executed_at
+            
+            # Safety check: if reference_time is None, use order creation time
+            if reference_time is None:
+                reference_time = order.created_at
+                tlogger.warning(f"[SL_WARN] Order {order.id}: No executed_at or sl_updated_at, using created_at")
+            
+            # Ensure reference_time is timezone-aware
+            if reference_time.tzinfo is None:
+                reference_time = reference_time.replace(tzinfo=timezone.utc)
+            
+            # DEBUG: Log all values for diagnosis
+            tlogger.info(f"[SL_DEBUG] Order {order.id} ({order.symbol}): "
+                        f"interval={interval}, last_close={last_close:.2f}, SL={float(order.stop_loss):.2f}, "
+                        f"candle_close={candle_close_time.isoformat()}, ref_time={reference_time.isoformat()}, "
+                        f"price_check={last_close <= float(order.stop_loss)}, time_check={candle_close_time > reference_time}")
             
             # Grace period: skip SL check if order was modified in the last 60 seconds
             # This prevents race condition where scheduler reads before API commits
